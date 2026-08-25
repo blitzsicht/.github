@@ -16,7 +16,7 @@ Kundenprojekte und Betriebsinterna bleiben privat.
 
 | Repository | Zweck |
 |---|---|
-| [normbrief](https://github.com/blitzsicht/normbrief) | Geschäftsbriefe nach DIN 5008 aus Markdown, mit nachgemessener Geometrie |
+| [falzmarke](https://github.com/blitzsicht/falzmarke) | Geschäftsbriefe nach DIN 5008 aus Markdown, mit nachgemessener Geometrie |
 
 ### Kontakt
 
