@@ -133,6 +133,15 @@ Verzeichnisnamen entspricht, und ob der Name mit einem bekannten Eigentümer-Pr�
 **Was es nicht prüft:** die Rollen-Suffixe — die sind eine Empfehlung, keine Pflicht (siehe
 oben), das kann ein Skript nicht entscheiden.
 
+**Archivierte Repos sind ausgenommen.** Ein archiviertes Repo ist eingefroren; eine
+Umbenennung ist dort nicht mehr vorgesehen, also wäre ein gemeldeter Fehler ein Auftrag, den
+niemand ausführen soll. Das ist zugleich der Weg, eine Altlast aus der Meldung zu bekommen,
+die den Namen aus guten Gründen behält — etwa das öffentliche `fs.readfile-memory-leak.jest`
+von 2018, dessen Punkt im Namen die Regel bricht, dessen Umbenennung aber fremde Klon-URLs
+bräche. Wichtig dabei: `gh repo list` liefert archivierte Repos per Default **mit**; das
+Skript filtert sie ausdrücklich heraus. Archivieren allein genügt also nicht, wenn jemand die
+Abfrage im Skript später wieder vereinfacht.
+
 **Wartung:** Die Präfix-Liste im Skript ist fest verdrahtet. `<kunde>-` und `<marke>-` sind
 offene Muster, die kein Skript erraten kann — ein neuer Kunde oder eine neue Marke muss dort
 von Hand ergänzt werden, sonst meldet das Skript sie als „kein bekanntes Präfix".
