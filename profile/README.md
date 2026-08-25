@@ -1,15 +1,17 @@
 ## Blitzsicht
 
-Webdesign für Handwerker und Mittelstand aus Regensburg. Wir bauen Websites in sieben
-Werktagen — saubere Technik, ehrliche SEO, Tracking inklusive. Was eine Website bringt,
-zeigen wir monatlich in Zahlen.
+Softwarehaus aus Regensburg. Wir entwickeln Unternehmenswebsites mit messbarer Technik:
+PageSpeed 95+, DSGVO ohne Cookie-Banner, kein Vendor-Lock-in, Source-Code beim Kunden.
+
+Kein Baukasten, kein Theme-Umbau. Astro, eigener Code, eigene Werkzeuge — und ein monatlicher
+Report, der zeigt, was die Website tatsächlich leistet.
 
 → [blitzsicht.com](https://blitzsicht.com)
 
 ### Was hier liegt
 
-Werkzeuge, die bei der täglichen Arbeit entstanden sind und für andere brauchbar sind.
-Der Rest — Kundenprojekte und Betriebsinterna — bleibt privat.
+Werkzeuge, die bei der Entwicklungsarbeit entstehen und für andere brauchbar sind.
+Kundenprojekte und Betriebsinterna bleiben privat.
 
 | Repository | Zweck |
 |---|---|
