@@ -17,12 +17,17 @@ Ein Repo-Name sagt zuerst, **wem er gehört**, danach welche Rolle er spielt:
 | `customer-` | Website-Deliverable für einen Auftraggeber | `customer-soleno` |
 | `<kunde>-` | Kunde mit eigenem Stack über die Website hinaus | `digital-direkt-odoo` |
 | `siluri-` | Siluri Clothing | `siluri-preise` |
-| `<marke>-` | Eigene Marke | `gympanzen-brand`, `preshot-brand` |
+| `<marke>-` | Eigene Marke oder eigenes Produkt | `gympanzen-brand`, `preshot-brand`, `falzmarke` |
 | `joe-` | Persönlich, nicht geschäftlich | `joe-fitness` |
+| *(kein Präfix)* | Werkzeuge, die keinem Venture gehören, sondern der Arbeitsweise | `orchestration`, `claude-shared`, `operator-hooks` |
+
+Ein Kunde kann **beide** Muster tragen: `customer-digital-direkt` ist die Website,
+`digital-direkt-odoo` und `digital-direkt-ops` sind der eigene Stack. Das ist gewollt — das
+`customer-`-Präfix markiert das Website-Deliverable, nicht den Kunden als Ganzes.
 
 ### Rollen-Suffixe
 
-Damit ein Name lesbar bleibt, ist die Rolle aus einer festen Liste:
+Wo ein Repo eine klar benennbare Rolle hat, kommt sie aus dieser Liste:
 
 | Suffix | Bedeutung |
 |---|---|
@@ -31,6 +36,16 @@ Damit ein Name lesbar bleibt, ist die Rolle aus einer festen Liste:
 | `-app` | lauffähige Software |
 | `-brand` | Marken-Vault (Assets, Richtlinien, Texte) |
 | `-infra` | Betrieb und Infrastruktur |
+
+**Die Liste ist keine Pflicht.** Trägt ein Repo stattdessen ein Produktwort, ist das richtig so:
+`siluri-preise`, `cw-seo-system`, `joe-rezepte`. Der Suffix benennt eine Rolle, wo es eine gibt —
+er ersetzt keinen Namen.
+
+### Bei Namenskollision
+
+Wollen zwei Repos denselben Namen, gewinnt das aktive; das abgelöste bekommt `-alt` angehängt
+und wird archiviert. Beispiel: `joe-fitness` bleibt aktiv, das abgelöste `pfit` würde
+`joe-fitness-alt`. Eine Nummerierung (`-2`) wird nicht vergeben — sie sagt nicht, welches gilt.
 
 ### Schreibregeln
 
@@ -58,8 +73,21 @@ Bestand nach sich — für einen rein kosmetischen Gewinn.
 
 ### Nachprüfen
 
-`blitzsicht-ops/scripts/check-repo-naming.sh` vergleicht die Repo-Liste gegen dieses Schema
-und meldet Abweichungen. Es meldet nur, es ändert nichts.
+`blitzsicht-ops/scripts/check-repo-naming.sh` meldet Abweichungen und ändert nichts.
+
+**Was es prüft:** Großbuchstaben, Unterstriche, Punkte, ob der Remote-Name dem lokalen
+Verzeichnisnamen entspricht, und ob der Name mit einem bekannten Eigentümer-Präfix beginnt.
+
+**Was es nicht prüft:** die Rollen-Suffixe — die sind eine Empfehlung, keine Pflicht (siehe
+oben), das kann ein Skript nicht entscheiden.
+
+**Wartung:** Die Präfix-Liste im Skript ist fest verdrahtet. `<kunde>-` und `<marke>-` sind
+offene Muster, die kein Skript erraten kann — ein neuer Kunde oder eine neue Marke muss dort
+von Hand ergänzt werden, sonst meldet das Skript sie als „kein bekanntes Präfix".
+
+Fällt `gh` aus oder kommt keine Repo-Liste zurück, endet das Skript mit Exit 3 und der Meldung
+`NICHT GEPRUEFT` — ausdrücklich nicht mit „sauber". Ein Prüfer, der bei Ausfall grün meldet,
+wäre schlimmer als keiner.
 
 ## Commits
 
