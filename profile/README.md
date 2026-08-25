@@ -1,10 +1,11 @@
 ## Blitzsicht
 
-Softwarehaus aus Regensburg. Wir entwickeln Unternehmenswebsites mit messbarer Technik:
-PageSpeed 95+, DSGVO ohne Cookie-Banner, kein Vendor-Lock-in, Source-Code beim Kunden.
+Softwarehaus aus Regensburg. Wir entwickeln Unternehmenswebsites, Odoo-ERP-Lösungen und
+eigene Software-Produkte.
 
-Kein Baukasten, kein Theme-Umbau. Astro, eigener Code, eigene Werkzeuge — und ein monatlicher
-Report, der zeigt, was die Website tatsächlich leistet.
+Kein Baukasten, kein Theme-Umbau: eigener Code, PageSpeed 95+, DSGVO ohne Cookie-Banner,
+kein Vendor-Lock-in, Source-Code beim Kunden — und ein monatlicher Report, der zeigt, was
+die Website tatsächlich leistet.
 
 → [blitzsicht.com](https://blitzsicht.com)
 
