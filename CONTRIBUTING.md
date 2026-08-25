@@ -53,6 +53,30 @@ Ein Kunde kann **beide** Muster tragen: `customer-digital-direkt` ist die Websit
 `digital-direkt-odoo` und `digital-direkt-ops` sind der eigene Stack. Das ist gewollt — das
 `customer-`-Präfix markiert das Website-Deliverable, nicht den Kunden als Ganzes.
 
+### Eigene Marken liegen bewusst in zwei Organisationen
+
+`gympanzen-brand` liegt bei `gottl-johannes`, `customer-gympanzen` bei `blitzsicht`. Das sieht
+nach einem Versehen aus, ist aber die richtige Trennung — und zwar aus einem technischen Grund:
+
+**Alle Websites eigener Marken stehen in `customer-websites/customer-registry.json`.** Das ist
+die Quelle, gegen die `cw-uptime` (Erreichbarkeit), `cw-seo-system` (Rankings, Lighthouse) und
+`cw-visual-tests` (visuelle Regression) arbeiten, und aus der die Referenzliste auf
+blitzsicht.com erzeugt wird. Eine Website, die dort fehlt, fällt aus all diesen Systemen —
+ohne Fehlermeldung.
+
+Daraus folgt die Regel:
+
+| Was | Präfix | Wohin | Warum |
+|---|---|---|---|
+| die **Website** einer eigenen Marke | `customer-` | `blitzsicht` | ist ein Deliverable auf der Plattform, steht in der Registry, wird dort betrieben und gemessen |
+| der **Marken-Vault** (Logos, Texte, Strategie, Produktideen) | `<marke>-brand` | dorthin, wo die Marke gehört | ist Inhalt, kein Code — nichts davon wird deployt oder überwacht |
+
+Man ist bei einer eigenen Marke sein eigener Kunde. `customer-` beschreibt hier die **Bauart
+und den Betrieb**, nicht ein Fremdverhältnis.
+
+Wo ein Produkt zusätzlich **Software** hat, kommt sie zur Plattform: `mazterplan-app`,
+`blitzsicht-platzfrei`. Auch das ist Code, der gebaut und betrieben wird.
+
 ### Rollen-Suffixe
 
 Wo ein Repo eine klar benennbare Rolle hat, kommt sie aus dieser Liste:
