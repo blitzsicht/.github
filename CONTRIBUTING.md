@@ -1,25 +1,53 @@
-# Mitarbeit an Blitzsicht-Repositories
+# Mitarbeit an Repositories
 
-Diese Datei liegt im Repo `blitzsicht/.github` und gilt als **Vorgabe für alle Repositories
-der Organisation**, die keine eigene `CONTRIBUTING.md` mitbringen.
+Diese Datei liegt im Repo `blitzsicht/.github` und gilt als Vorgabe für alle Repositories
+dieser Organisation ohne eigene `CONTRIBUTING.md`. Der Abschnitt **Repository-Namen** gilt
+darüber hinaus **organisationsübergreifend** — für `blitzsicht`, `siluri-clothing`,
+`gottl-johannes` und das Personenkonto. Er ist die einzige Fassung; andere Organisationen
+verweisen hierher, statt eine eigene zu führen.
 
 ## Repository-Namen
 
-Ein Repo-Name sagt zuerst, **wem er gehört**, danach welche Rolle er spielt:
+```
+<bereich>-<rolle>[-<detail>]
+```
 
-```
-<eigentümer>-<rolle>[-<detail>]
-```
+### Warum überhaupt ein Präfix, wo doch die Organisation den Besitzer nennt?
+
+Diese Frage ist berechtigt — `siluri-clothing/siluri-ops` wiederholt sich sichtbar. Der Grund
+liegt **außerhalb von GitHub**:
+
+Die lokale Ablage ist **flach**. 141 Arbeitsverzeichnisse liegen direkt nebeneinander unter
+`CODE/CLAUDE/`. Was auf GitHub die Organisation trennt, muss dort der Name allein leisten.
+Ohne Präfix gäbe es **dreimal `ops`** und **dreimal `docs`** im selben Verzeichnis.
+
+Dazu kommt die Bindung an den lokalen Verzeichnisnamen (siehe Schreibregeln): Ein Repo, das
+auf GitHub `ops` hieße, müsste lokal auch `ops` heißen — und kollidierte sofort.
+
+**Das Präfix benennt also nicht den Besitzer, sondern macht den Namen für sich allein
+eindeutig** — als Verzeichnis, in einer Suche, in einem Skriptpfad. Wer die Ablage eines Tages
+nach Organisationen gliedert, kann die Präfixe fallen lassen; solange sie flach ist, tragen sie.
+
+Nur nebenbei ein zweiter Grund: Ein Rename ist nicht gratis. `siluri-ops` allein wird in
+**680 Dateien** hart referenziert.
+
+### Die Präfixe
 
 | Präfix | Für | Beispiele |
 |---|---|---|
-| `blitzsicht-` | Blitzsicht-eigen: Plattform, Produkte, Betrieb | `blitzsicht-ops`, `blitzsicht-platzfrei` |
+| `blitzsicht-` | Blitzsicht-eigen: Betrieb, Produkte | `blitzsicht-ops`, `blitzsicht-platzfrei` |
+| `cw-` | die geteilte Plattform hinter den Kundenwebsites | `cw-core`, `cw-seo-system` |
 | `customer-` | Website-Deliverable für einen Auftraggeber | `customer-soleno` |
 | `<kunde>-` | Kunde mit eigenem Stack über die Website hinaus | `digital-direkt-odoo` |
 | `siluri-` | Siluri Clothing | `siluri-preise` |
 | `<marke>-` | Eigene Marke oder eigenes Produkt | `gympanzen-brand`, `preshot-brand`, `falzmarke` |
 | `joe-` | Persönlich, nicht geschäftlich | `joe-fitness` |
-| *(kein Präfix)* | Werkzeuge, die keinem Venture gehören, sondern der Arbeitsweise | `orchestration`, `claude-shared`, `operator-hooks` |
+| *(kein Präfix)* | Werkzeuge, die keinem Bereich gehören, sondern der Arbeitsweise | `orchestration`, `claude-shared`, `operator-hooks` |
+
+**`cw-` und `customer-` sind keine Besitz-, sondern Rollenangaben** und bleiben deshalb auch
+innerhalb einer Organisation sinnvoll: Sie trennen Kundenprojekte von Plattformbausteinen.
+`cw-` ist ein Altbestand — „Customer Websites" — und wird für neue Repos nicht mehr vergeben,
+Begründung weiter unten.
 
 Ein Kunde kann **beide** Muster tragen: `customer-digital-direkt` ist die Website,
 `digital-direkt-odoo` und `digital-direkt-ops` sind der eigene Stack. Das ist gewollt — das
