@@ -3,27 +3,29 @@ _templates_suffix: ''
 _envops:
   keep_trailing_newline: true
 
-questions:
-  profil:
-    type: str
-    help: "Profil dieses Repos (S = einfach/temporär, M = Standard, L = groß, W = Wegwerf)"
-    choices:
-      - S
-      - M
-      - L
-      - W
-  name:
-    type: str
-    help: "Kurzname des Repos (z. B. beispiel-werkzeug)"
-  zweck:
-    type: str
-    help: "Ein Satz Zweck dieses Repos"
-  betrieb_geplant:
-    type: str
-    help: "Ist dauerhafter Betrieb geplant?"
-    choices:
-      - "ja"
-      - "nein"
+profil:
+  type: str
+  help: "Profil dieses Repos (S = einfach/temporär, M = Standard, L = groß, W = Wegwerf)"
+  choices:
+    - S
+    - M
+    - L
+    - W
+
+name:
+  type: str
+  help: "Kurzname des Repos (z. B. beispiel-werkzeug)"
+
+zweck:
+  type: str
+  help: "Ein Satz Zweck dieses Repos"
+
+betrieb_geplant:
+  type: str
+  help: "Ist dauerhafter Betrieb geplant?"
+  choices:
+    - "ja"
+    - "nein"
 
 _skip_if_exists:
   - AGENTS.md
