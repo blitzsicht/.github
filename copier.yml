@@ -1,0 +1,56 @@
+_subdirectory: vorlagen
+_templates_suffix: ''
+_envops:
+  keep_trailing_newline: true
+
+questions:
+  profil:
+    type: str
+    help: "Profil dieses Repos (S = einfach/temporär, M = Standard, L = groß, W = Wegwerf)"
+    choices:
+      - S
+      - M
+      - L
+      - W
+  name:
+    type: str
+    help: "Kurzname des Repos (z. B. beispiel-werkzeug)"
+  zweck:
+    type: str
+    help: "Ein Satz Zweck dieses Repos"
+  betrieb_geplant:
+    type: str
+    help: "Ist dauerhafter Betrieb geplant?"
+    choices:
+      - "ja"
+      - "nein"
+
+_skip_if_exists:
+  - AGENTS.md
+  - CLAUDE.md
+  - docs/INDEX.md
+  - docs/BETRIEB.md
+  - docs/ARCHITEKTUR.md
+  - docs/decisions/0001-beispiel.md
+
+_exclude:
+  - copier.yml
+  - .git
+  - .gsd
+  - standard
+  - tests
+  - profile
+  - CONTRIBUTING.md
+  - DOOR.md
+  - SECURITY.md
+  - .gitignore
+  - .DS_Store
+  - .bg-shell
+
+_tasks:
+  - >-
+    {% if profil in ['S', 'W'] %}
+    rm -f docs/INDEX.md docs/BETRIEB.md docs/ARCHITEKTUR.md docs/decisions/0001-beispiel.md && rmdir docs/decisions 2>/dev/null || true && rmdir docs 2>/dev/null || true
+    {% elif profil == 'M' %}
+    rm -f docs/ARCHITEKTUR.md docs/decisions/0001-beispiel.md && rmdir docs/decisions 2>/dev/null || true
+    {% endif %}
