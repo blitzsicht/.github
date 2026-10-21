@@ -81,7 +81,8 @@ case "$PROFIL" in
       fi
 
       # R-MERMAID
-      mermaid_count="$(grep -c '^```mermaid' "$REPO/docs/ARCHITEKTUR.md" 2>/dev/null || echo 0)"
+      mermaid_count=0
+      grep -q '^```mermaid' "$REPO/docs/ARCHITEKTUR.md" 2>/dev/null && mermaid_count=1 || true
       if [ "$mermaid_count" -gt 0 ]; then
         ok "R-MERMAID: Mermaid-Block in docs/ARCHITEKTUR.md vorhanden"
       else
