@@ -1,127 +1,102 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# pruefe-repo.sh — prüft ein Repo gegen den Doku-Standard (Profile S, M, L, W).
+#
+#   pruefe-repo.sh [--profil S|M|L|W] [REPO-PFAD]
+#
+# Je Regel eine Zeile „ok …“ oder „FEHLER …“, Heuristiken als „HINWEIS …“.
+# Exit 1 bei mindestens einem FEHLER, Hinweise ändern den Exit-Code nie.
+# Jede Regel trägt eine Kennung (R-…), der Selbsttest prüft genau diese.
+set -uo pipefail
 
+PROFIL_VORGABE=""
+if [ "${1:-}" = "--profil" ]; then
+  PROFIL_VORGABE="${2:-}"
+  shift 2
+fi
 REPO="${1:-.}"
 
 PASS=0
 FAIL=0
 HINWEIS=0
+ok()      { echo "ok      $1"; PASS=$((PASS+1)); }
+fehler()  { echo "FEHLER  $1"; FAIL=$((FAIL+1)); }
+hinweis() { echo "HINWEIS $1"; HINWEIS=$((HINWEIS+1)); }
 
-ok()     { echo "  ok: $1";     PASS=$((PASS+1)); }
-fehler() { echo "FEHLER: $1";   FAIL=$((FAIL+1)); }
-hinweis(){ echo "HINWEIS: $1";  HINWEIS=$((HINWEIS+1)); }
+datei_pflicht() {  # datei_pflicht <Regel> <Pfad relativ zum Repo>
+  if [ -f "$REPO/$2" ]; then ok "$1: $2 vorhanden"; else fehler "$1: $2 fehlt"; fi
+}
 
-# ── R-AGENTS-EXIST ────────────────────────────────────────────────────────────
-if [ -f "$REPO/AGENTS.md" ]; then
-  ok "R-AGENTS-EXIST: AGENTS.md vorhanden"
-else
-  fehler "R-AGENTS-EXIST: AGENTS.md fehlt"
-fi
+hoechstens_zeilen() {  # hoechstens_zeilen <Regel> <Pfad> <Grenze>
+  [ -f "$REPO/$2" ] || return 0
+  local n
+  n=$(wc -l < "$REPO/$2" | tr -d ' ')
+  if [ "$n" -le "$3" ]; then ok "$1: $2 hat $n Zeilen (Grenze $3)"
+  else fehler "$1: $2 hat $n Zeilen, erlaubt sind $3"; fi
+}
 
-# ── R-AGENTS-PROFIL ───────────────────────────────────────────────────────────
-profil_line="$(grep -m1 '^Profil: [SMLW]$' "$REPO/AGENTS.md" 2>/dev/null || true)"
-if [ -n "$profil_line" ]; then
-  ok "R-AGENTS-PROFIL: Zeile 'Profil: <S|M|L|W>' vorhanden"
-else
-  fehler "R-AGENTS-PROFIL: Keine gültige Profil-Zeile (^Profil: [SMLW]$) in AGENTS.md"
-fi
-
-# ── Profil auslesen ───────────────────────────────────────────────────────────
-PROFIL=""
-if [ -n "$profil_line" ]; then
-  PROFIL="${profil_line#Profil: }"
-fi
-
-# ── R-CLAUDE-EXIST ────────────────────────────────────────────────────────────
-if [ -f "$REPO/CLAUDE.md" ]; then
-  ok "R-CLAUDE-EXIST: CLAUDE.md vorhanden"
-else
-  fehler "R-CLAUDE-EXIST: CLAUDE.md fehlt"
-fi
-
-# ── R-CLAUDE-AT ───────────────────────────────────────────────────────────────
-first_line="$(head -1 "$REPO/CLAUDE.md" 2>/dev/null || true)"
-if [ "$first_line" = "@AGENTS.md" ]; then
-  ok "R-CLAUDE-AT: erste Zeile von CLAUDE.md ist '@AGENTS.md'"
-else
-  fehler "R-CLAUDE-AT: erste Zeile von CLAUDE.md ist '$first_line' (erwartet: @AGENTS.md)"
-fi
-
-# ── Profil-spezifische Regeln ─────────────────────────────────────────────────
-case "$PROFIL" in
-  M|L)
-    # R-DOCS-INDEX
-    if [ -f "$REPO/docs/INDEX.md" ]; then
-      ok "R-DOCS-INDEX: docs/INDEX.md vorhanden"
-    else
-      fehler "R-DOCS-INDEX: docs/INDEX.md fehlt"
-    fi
-
-    # R-DOCS-BETRIEB
-    if [ -f "$REPO/docs/BETRIEB.md" ]; then
-      ok "R-DOCS-BETRIEB: docs/BETRIEB.md vorhanden"
-    else
-      fehler "R-DOCS-BETRIEB: docs/BETRIEB.md fehlt"
-    fi
-
-    # R-REMOTE
-    remote_out="$(git -C "$REPO" remote 2>/dev/null || true)"
-    if [ -n "$remote_out" ]; then
-      ok "R-REMOTE: git remote konfiguriert"
-    else
-      fehler "R-REMOTE: kein git remote konfiguriert"
-    fi
-
-    if [ "$PROFIL" = "L" ]; then
-      # R-ARCHITEKTUR
-      if [ -f "$REPO/docs/ARCHITEKTUR.md" ]; then
-        ok "R-ARCHITEKTUR: docs/ARCHITEKTUR.md vorhanden"
-      else
-        fehler "R-ARCHITEKTUR: docs/ARCHITEKTUR.md fehlt"
-      fi
-
-      # R-MERMAID
-      mermaid_count=0
-      grep -q '^```mermaid' "$REPO/docs/ARCHITEKTUR.md" 2>/dev/null && mermaid_count=1 || true
-      if [ "$mermaid_count" -gt 0 ]; then
-        ok "R-MERMAID: Mermaid-Block in docs/ARCHITEKTUR.md vorhanden"
-      else
-        fehler "R-MERMAID: kein Mermaid-Block (^\`\`\`mermaid) in docs/ARCHITEKTUR.md"
-      fi
-
-      # R-DECISIONS
-      if [ -d "$REPO/docs/decisions" ]; then
-        ok "R-DECISIONS: Verzeichnis docs/decisions vorhanden"
-      else
-        fehler "R-DECISIONS: Verzeichnis docs/decisions fehlt"
-      fi
-    fi
-    ;;
-
-  S|W)
-    # R-REMOTE-SW — Hinweis statt Fehler
-    remote_out="$(git -C "$REPO" remote 2>/dev/null || true)"
-    if [ -z "$remote_out" ]; then
-      hinweis "R-REMOTE-SW: kein git remote konfiguriert (bei Profil $PROFIL optional)"
-    else
-      ok "R-REMOTE-SW: git remote konfiguriert"
-    fi
-    ;;
-
-  "")
-    # Profil nicht lesbar — Regeln übersprungen, FEHLER schon oben gezählt
-    ;;
-
-  *)
-    fehler "Unbekanntes Profil '$PROFIL'"
-    ;;
-esac
-
-# ── Zusammenfassung ───────────────────────────────────────────────────────────
-echo ""
-echo "PASS=$PASS FAIL=$FAIL HINWEIS=$HINWEIS"
-
-if [ "$FAIL" -gt 0 ]; then
+if [ ! -d "$REPO" ]; then
+  fehler "R-REPO: Verzeichnis $REPO fehlt"
+  echo "PASS=$PASS FAIL=$FAIL HINWEIS=$HINWEIS"
   exit 1
 fi
-exit 0
+
+# ── Für alle Profile ─────────────────────────────────────────────────────────
+datei_pflicht R-README README.md
+datei_pflicht R-AGENTS AGENTS.md
+datei_pflicht R-CLAUDE CLAUDE.md
+
+if [ -f "$REPO/CLAUDE.md" ]; then
+  erste=$(head -n 1 "$REPO/CLAUDE.md")
+  if [ "$erste" = "@AGENTS.md" ]; then ok "R-CLAUDE-IMPORT: CLAUDE.md beginnt mit @AGENTS.md"
+  else fehler "R-CLAUDE-IMPORT: erste Zeile von CLAUDE.md ist '$erste', erwartet '@AGENTS.md'"; fi
+fi
+
+PROFIL="$PROFIL_VORGABE"
+if [ -z "$PROFIL" ] && [ -f "$REPO/AGENTS.md" ]; then
+  PROFIL=$(grep -m1 -E '^Profil: [SMLW]$' "$REPO/AGENTS.md" | cut -d' ' -f2 || true)
+fi
+case "$PROFIL" in
+  S|M|L|W) ok "R-PROFIL: Profil $PROFIL" ;;
+  "")      fehler "R-PROFIL: keine Zeile 'Profil: S|M|L|W' in AGENTS.md" ;;
+  *)       fehler "R-PROFIL: unbekanntes Profil '$PROFIL'"; PROFIL="" ;;
+esac
+
+case "$PROFIL" in
+  S|W) hoechstens_zeilen R-AGENTS-GROESSE AGENTS.md 60 ;;
+  M|L) hoechstens_zeilen R-AGENTS-GROESSE AGENTS.md 150 ;;
+esac
+
+# ── M und L ──────────────────────────────────────────────────────────────────
+if [ "$PROFIL" = M ] || [ "$PROFIL" = L ]; then
+  datei_pflicht R-INDEX docs/INDEX.md
+  hoechstens_zeilen R-INDEX-GROESSE docs/INDEX.md 40
+
+  if [ -d "$REPO/docs/decisions" ]; then ok "R-DECISIONS: docs/decisions/ vorhanden"
+  else fehler "R-DECISIONS: docs/decisions/ fehlt"; fi
+
+  if grep -qE '^Betrieb: geplant$' "$REPO/AGENTS.md" 2>/dev/null; then
+    datei_pflicht R-BETRIEB docs/BETRIEB.md
+  fi
+
+  if [ -n "$(git -C "$REPO" remote 2>/dev/null)" ]; then ok "R-REMOTE: git remote vorhanden"
+  else fehler "R-REMOTE: kein git remote, das Repo hat kein Backup"; fi
+
+  if [ ! -f "$REPO/.env.example" ] && grep -rIlqE 'os\.environ|os\.getenv|getenv\(|process\.env|ENV\[' \
+       --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.venv --exclude='*.md' "$REPO" 2>/dev/null; then
+    hinweis "H-ENV-EXAMPLE: der Code liest Umgebungsvariablen, .env.example fehlt"
+  fi
+fi
+
+# ── nur L ────────────────────────────────────────────────────────────────────
+if [ "$PROFIL" = L ]; then
+  datei_pflicht R-ARCHITEKTUR docs/ARCHITEKTUR.md
+  if [ -f "$REPO/docs/ARCHITEKTUR.md" ]; then
+    if grep -qE '^```mermaid' "$REPO/docs/ARCHITEKTUR.md"; then ok "R-MERMAID: Diagramm in docs/ARCHITEKTUR.md"
+    else fehler "R-MERMAID: docs/ARCHITEKTUR.md ohne mermaid-Block"; fi
+  fi
+  datei_pflicht R-RUNBOOK docs/RUNBOOK.md
+  datei_pflicht R-CHANGELOG CHANGELOG.md
+fi
+
+echo "PASS=$PASS FAIL=$FAIL HINWEIS=$HINWEIS"
+[ "$FAIL" -eq 0 ]

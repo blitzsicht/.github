@@ -1,8 +1,8 @@
-# Doku-Standard prüfen (https://github.com/blitzsicht/.github)
-on: [push, pull_request]
+# Nach .github/workflows/doc-standard.yml kopieren. Beide Refs gleich halten.
+name: doc-standard
+on: {pull_request: {}, push: {branches: [main]}}
+permissions: {contents: read, pull-requests: write}
 jobs:
-  doku-standard:
+  doc-standard:
     uses: blitzsicht/.github/.github/workflows/doc-standard.yml@main
-    # with:
-    #   pfad: .          # optional: Unterverzeichnis
-    #   drift-pfade: .   # optional: Dateien für drift-hinweis
+    with: {standard-ref: main}

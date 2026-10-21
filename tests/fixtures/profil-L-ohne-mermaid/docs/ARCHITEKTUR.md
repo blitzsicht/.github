@@ -1,3 +1,0 @@
-# ARCHITEKTUR
-
-Kein Diagramm.

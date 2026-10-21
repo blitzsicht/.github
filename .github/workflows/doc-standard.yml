@@ -1,32 +1,71 @@
+# Reusable Workflow des Doku-Standards. Aufruf aus einem anderen Repo: standard/beispiel-aufruf.yml.
+#
+# Prüft das aufrufende Repo mit standard/pruefe-repo.sh aus DIESEM Repo (keine Kopie im Workflow),
+# lintet nur geänderte Markdown-Dateien, prüft deren interne Links, scannt den Diff auf Secrets
+# und schreibt auf Wunsch einen Drift-Hinweis als PR-Kommentar (nie ein Fehlschlag).
 name: doc-standard
 
 on:
   workflow_call:
     inputs:
       profil:
-        description: "Repo-Profil (S/M/L/W). Leer = pruefe-repo.sh liest AGENTS.md."
+        description: "S, M, L oder W. Leer: Zeile 'Profil:' aus AGENTS.md."
         type: string
-        required: false
-        default: ''
-      drift-pfade:
-        description: "Komma-separierte Pfadliste für Drift-Hinweis-Job."
-        type: string
-        required: false
         default: ''
       pfad:
-        description: "Wurzelpfad des zu prüfenden Repos (relativ zum Checkout)."
+        description: "Wurzel des geprüften Repos relativ zum Checkout."
         type: string
-        required: false
         default: '.'
+      drift-pfade:
+        description: "Eine Regel je Zeile: 'code/pfad -> docs/datei.md'. Leer: kein Drift-Hinweis."
+        type: string
+        default: ''
+      standard-ref:
+        description: "Stand von blitzsicht/.github, aus dem Skript und Lint-Regeln kommen. Gleich dem Ref im uses: halten."
+        type: string
+        default: 'main'
 
-# Deny-all auf Top-Ebene; Jobs überschreiben nur, was sie brauchen.
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: doc-standard-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  STANDARD_REPO: blitzsicht/.github
+
 jobs:
+  aenderungen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      md: ${{ steps.diff.outputs.md }}
+      basis: ${{ steps.diff.outputs.basis }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+      - id: diff
+        shell: bash
+        env:
+          PR_BASIS: ${{ github.event.pull_request.base.sha }}
+          VORHER: ${{ github.event.before }}
+          PFAD: ${{ inputs.pfad }}
+        run: |
+          basis="${PR_BASIS:-$VORHER}"
+          # Neuer Branch (before = 000…) oder unbekannte Basis: alles gilt als geändert.
+          if [ -z "$basis" ] || ! git cat-file -e "$basis^{commit}" 2>/dev/null; then basis=""; fi
+          if [ -n "$basis" ]; then
+            git diff --name-only --diff-filter=ACMR "$basis" HEAD -- "$PFAD" > md.txt
+          else
+            git ls-files -- "$PFAD" > md.txt
+          fi
+          grep -E '\.md$' md.txt > md-nur.txt || true
+          echo "basis=$basis" >> "$GITHUB_OUTPUT"
+          if [ -s md-nur.txt ]; then echo "md=true" >> "$GITHUB_OUTPUT"; else echo "md=false" >> "$GITHUB_OUTPUT"; fi
+          echo "Geänderte Markdown-Dateien: $(wc -l < md-nur.txt)"
 
   pruefe-repo:
     runs-on: ubuntu-latest
@@ -35,222 +74,133 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
-          fetch-depth: 0
-
-      - name: pruefe-repo.sh
-        shell: bash
-        run: |
-          set -euo pipefail
-          REPO="${{ inputs.pfad }}"
-
-          PASS=0
-          FAIL=0
-          HINWEIS=0
-
-          ok()     { echo "  ok: $1";     PASS=$((PASS+1)); }
-          fehler() { echo "FEHLER: $1";   FAIL=$((FAIL+1)); }
-          hinweis(){ echo "HINWEIS: $1";  HINWEIS=$((HINWEIS+1)); }
-
-          # ── R-AGENTS-EXIST ────────────────────────────────────────────────────────────
-          if [ -f "$REPO/AGENTS.md" ]; then
-            ok "R-AGENTS-EXIST: AGENTS.md vorhanden"
-          else
-            fehler "R-AGENTS-EXIST: AGENTS.md fehlt"
-          fi
-
-          # ── R-AGENTS-PROFIL ───────────────────────────────────────────────────────────
-          profil_line="$(grep -m1 '^Profil: [SMLW]$' "$REPO/AGENTS.md" 2>/dev/null || true)"
-          if [ -n "$profil_line" ]; then
-            ok "R-AGENTS-PROFIL: Zeile 'Profil: <S|M|L|W>' vorhanden"
-          else
-            fehler "R-AGENTS-PROFIL: Keine gültige Profil-Zeile (^Profil: [SMLW]$) in AGENTS.md"
-          fi
-
-          # ── Profil auslesen ───────────────────────────────────────────────────────────
-          PROFIL=""
-          if [ -n "$profil_line" ]; then
-            PROFIL="${profil_line#Profil: }"
-          fi
-
-          # ── R-CLAUDE-EXIST ────────────────────────────────────────────────────────────
-          if [ -f "$REPO/CLAUDE.md" ]; then
-            ok "R-CLAUDE-EXIST: CLAUDE.md vorhanden"
-          else
-            fehler "R-CLAUDE-EXIST: CLAUDE.md fehlt"
-          fi
-
-          # ── R-CLAUDE-AT ───────────────────────────────────────────────────────────────
-          first_line="$(head -1 "$REPO/CLAUDE.md" 2>/dev/null || true)"
-          if [ "$first_line" = "@AGENTS.md" ]; then
-            ok "R-CLAUDE-AT: erste Zeile von CLAUDE.md ist '@AGENTS.md'"
-          else
-            fehler "R-CLAUDE-AT: erste Zeile von CLAUDE.md ist '$first_line' (erwartet: @AGENTS.md)"
-          fi
-
-          # ── Profil-spezifische Regeln ─────────────────────────────────────────────────
-          case "$PROFIL" in
-            M|L)
-              # R-DOCS-INDEX
-              if [ -f "$REPO/docs/INDEX.md" ]; then
-                ok "R-DOCS-INDEX: docs/INDEX.md vorhanden"
-              else
-                fehler "R-DOCS-INDEX: docs/INDEX.md fehlt"
-              fi
-
-              # R-DOCS-BETRIEB
-              if [ -f "$REPO/docs/BETRIEB.md" ]; then
-                ok "R-DOCS-BETRIEB: docs/BETRIEB.md vorhanden"
-              else
-                fehler "R-DOCS-BETRIEB: docs/BETRIEB.md fehlt"
-              fi
-
-              # R-REMOTE
-              remote_out="$(git -C "$REPO" remote 2>/dev/null || true)"
-              if [ -n "$remote_out" ]; then
-                ok "R-REMOTE: git remote konfiguriert"
-              else
-                fehler "R-REMOTE: kein git remote konfiguriert"
-              fi
-
-              if [ "$PROFIL" = "L" ]; then
-                # R-ARCHITEKTUR
-                if [ -f "$REPO/docs/ARCHITEKTUR.md" ]; then
-                  ok "R-ARCHITEKTUR: docs/ARCHITEKTUR.md vorhanden"
-                else
-                  fehler "R-ARCHITEKTUR: docs/ARCHITEKTUR.md fehlt"
-                fi
-
-                # R-MERMAID
-                mermaid_count="$(grep -c '^```mermaid' "$REPO/docs/ARCHITEKTUR.md" 2>/dev/null || echo 0)"
-                if [ "$mermaid_count" -gt 0 ]; then
-                  ok "R-MERMAID: Mermaid-Block in docs/ARCHITEKTUR.md vorhanden"
-                else
-                  fehler "R-MERMAID: kein Mermaid-Block (^\`\`\`mermaid) in docs/ARCHITEKTUR.md"
-                fi
-
-                # R-DECISIONS
-                if [ -d "$REPO/docs/decisions" ]; then
-                  ok "R-DECISIONS: Verzeichnis docs/decisions vorhanden"
-                else
-                  fehler "R-DECISIONS: Verzeichnis docs/decisions fehlt"
-                fi
-              fi
-              ;;
-
-            S|W)
-              # R-REMOTE-SW — Hinweis statt Fehler
-              remote_out="$(git -C "$REPO" remote 2>/dev/null || true)"
-              if [ -z "$remote_out" ]; then
-                hinweis "R-REMOTE-SW: kein git remote konfiguriert (bei Profil $PROFIL optional)"
-              else
-                ok "R-REMOTE-SW: git remote konfiguriert"
-              fi
-              ;;
-
-            "")
-              # Profil nicht lesbar — Regeln übersprungen, FEHLER schon oben gezählt
-              ;;
-
-            *)
-              fehler "Unbekanntes Profil '$PROFIL'"
-              ;;
-          esac
-
-          # ── Zusammenfassung ───────────────────────────────────────────────────────────
-          echo ""
-          echo "PASS=$PASS FAIL=$FAIL HINWEIS=$HINWEIS"
-
-          if [ "$FAIL" -gt 0 ]; then
-            exit 1
-          fi
-          exit 0
+          repository: ${{ env.STANDARD_REPO }}
+          ref: ${{ inputs.standard-ref }}
+          path: .doc-standard
+          persist-credentials: false
+      - shell: bash
+        env:
+          PROFIL: ${{ inputs.profil }}
+          PFAD: ${{ inputs.pfad }}
+        run: bash .doc-standard/standard/pruefe-repo.sh ${PROFIL:+--profil "$PROFIL"} "$PFAD"
 
   markdownlint:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.md == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: ${{ env.STANDARD_REPO }}
+          ref: ${{ inputs.standard-ref }}
+          path: .doc-standard
+          persist-credentials: false
+      - id: dateien
+        shell: bash
+        env:
+          BASIS: ${{ needs.aenderungen.outputs.basis }}
+          PFAD: ${{ inputs.pfad }}
+        run: |
+          if [ -n "$BASIS" ]; then git diff --name-only --diff-filter=ACMR "$BASIS" HEAD -- "$PFAD"; else git ls-files -- "$PFAD"; fi \
+            | grep -E '\.md$' > md-nur.txt || true
+          # ':' vor jedem Pfad: markdownlint-cli2 liest den Namen dann wörtlich, nicht als Glob.
+          { echo 'liste<<ENDE'; sed 's/^/:/' md-nur.txt; echo 'ENDE'; } >> "$GITHUB_OUTPUT"
       - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
         with:
-          globs: '${{ inputs.pfad }}/**/*.md'
-          config: '.markdownlint-cli2.yaml'
+          config: .doc-standard/.markdownlint-cli2.yaml
+          globs: ${{ steps.dateien.outputs.liste }}
 
   links:
+    needs: aenderungen
+    if: needs.aenderungen.outputs.md == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
+        with:
+          fetch-depth: 0
+      - id: dateien
+        shell: bash
+        env:
+          BASIS: ${{ needs.aenderungen.outputs.basis }}
+          PFAD: ${{ inputs.pfad }}
+        run: |
+          if [ -n "$BASIS" ]; then git diff --name-only --diff-filter=ACMR "$BASIS" HEAD -- "$PFAD"; else git ls-files -- "$PFAD"; fi \
+            | grep -E '\.md$' | tr '\n' ' ' > md-nur.txt || true
+          echo "liste=$(cat md-nur.txt)" >> "$GITHUB_OUTPUT"
+      # Nur interne Links (--offline). Externe Links prüft der PR bewusst nicht.
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8  # v2.9.0
         with:
-          args: '--offline ${{ inputs.pfad }}'
+          args: --offline --no-progress ${{ steps.dateien.outputs.liste }}
           fail: true
 
   secrets:
+    needs: aenderungen
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Gitleaks secret scan
-        shell: bash
+        with:
+          fetch-depth: 0
+      # gitleaks als CLI mit Prüfsumme: die gitleaks-Action verlangt für Organisationen eine Lizenz.
+      - shell: bash
+        env:
+          BASIS: ${{ needs.aenderungen.outputs.basis }}
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          # Update: neue Version auf https://github.com/gitleaks/gitleaks/releases prüfen; SHA256 aus gitleaks_VERSION_checksums.txt
-          GITLEAKS_VERSION="8.30.1"
-          GITLEAKS_SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            -o gitleaks.tar.gz
-          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
-          tar -xzf gitleaks.tar.gz gitleaks
-          chmod +x gitleaks
-          ./gitleaks detect --no-git --source "${{ inputs.pfad }}"
+          curl -fsSL -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+          if [ -n "$BASIS" ]; then
+            ./gitleaks git --no-banner --redact --log-opts="${BASIS}..HEAD" .
+          else
+            ./gitleaks dir --no-banner --redact .
+          fi
 
   drift-hinweis:
+    if: github.event_name == 'pull_request' && inputs.drift-pfade != ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.event_name == 'pull_request' && inputs.drift-pfade != ''
+    continue-on-error: true
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        env:
+          DRIFT_PFADE: ${{ inputs.drift-pfade }}
         with:
           script: |
-            const driftPfade = '${{ inputs.drift-pfade }}'.split(',').map(p => p.trim()).filter(Boolean);
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-              per_page: 100,
+            const regeln = process.env.DRIFT_PFADE.split('\n')
+              .map(z => z.split('->').map(t => t.trim()))
+              .filter(t => t.length === 2 && t[0] && t[1]);
+            const dateien = (await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo, pull_number: context.issue.number, per_page: 100,
+            })).map(f => f.filename);
+            const treffer = regeln.filter(([code, doku]) =>
+              dateien.some(f => f.startsWith(code)) && !dateien.some(f => f.startsWith(doku)));
+            if (treffer.length === 0) return;
+            const marke = '<!-- doc-standard:drift -->';
+            const body = `${marke}\n**Drift-Hinweis:** Code geändert, zugehörige Doku nicht.\n\n` +
+              treffer.map(([code, doku]) => `- \`${code}\` geändert, \`${doku}\` nicht`).join('\n') +
+              '\n\nNur ein Hinweis, der Lauf schlägt dadurch nicht fehl.';
+            const kommentare = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
             });
-
-            const geaendert = files.filter(f =>
-              driftPfade.some(p => f.filename.startsWith(p))
-            ).map(f => `- \`${f.filename}\``);
-
-            if (geaendert.length === 0) return;
-
-            let body = '## Drift-Hinweis: Docs-Standard-Dateien geändert\n\n';
-            body += 'Diese Dateien im PR betreffen den Docs-Standard:\n\n';
-            body += geaendert.join('\n');
-
-            if (files.length >= 100) {
-              body += '\n\n> **Hinweis:** PR hat ≥ 100 Dateien — Liste ggf. unvollständig.';
-            }
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body,
-            });
+            const alt = kommentare.find(k => k.body && k.body.startsWith(marke));
+            if (alt) await github.rest.issues.updateComment({ ...context.repo, comment_id: alt.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });

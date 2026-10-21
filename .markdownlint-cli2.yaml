@@ -1,4 +1,20 @@
+# Minimaler Regelsatz des Doku-Standards: Überschriften, Listen, Codeblöcke.
+# Alles andere ist aus, damit die Prüfung bei der Einführung nicht an Stilfragen scheitert.
 config:
-  MD013: false
-  MD033: false
-  MD041: false
+  default: false
+  MD001: true                # Überschriftenebenen nicht überspringen
+  MD003: {style: atx}        # Überschriften mit #
+  MD018: true                # Leerzeichen nach #
+  MD019: true                # nur ein Leerzeichen nach #
+  MD025: true                # höchstens eine H1
+  MD004: {style: consistent} # Listenzeichen einheitlich
+  MD005: true                # Listen gleich eingerückt
+  MD032: true                # Listen mit Leerzeilen abgesetzt
+  MD040: true                # Codeblöcke mit Sprache
+  MD046: {style: fenced}     # Codeblöcke mit ```
+ignores:
+  - "**/node_modules/**"
+  - "**/.venv/**"
+  - "**/vendor/**"
+  - ".gsd/**"
+  - "thoughts/**"

@@ -1,1 +1,3 @@
-# INDEX
+# Index
+
+- [AGENTS.md](../AGENTS.md)

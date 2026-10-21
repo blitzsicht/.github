@@ -1,0 +1,2 @@
+# Von copier verwaltet, nicht von Hand ändern.
+{{ _copier_answers|to_nice_yaml -}}

@@ -1,9 +1,6 @@
-# ARCHITEKTUR
-
-Systemübersicht als Diagramm.
+# Architektur
 
 ```mermaid
-graph TD
-    A[Nutzer] --> B[Anwendung]
-    B --> C[Datenbank]
+flowchart LR
+  a --> b
 ```
