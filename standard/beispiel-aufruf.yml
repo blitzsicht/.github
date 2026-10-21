@@ -1,0 +1,8 @@
+# Doku-Standard prüfen (https://github.com/blitzsicht/.github)
+on: [push, pull_request]
+jobs:
+  doku-standard:
+    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@main
+    # with:
+    #   pfad: .          # optional: Unterverzeichnis
+    #   drift-pfade: .   # optional: Dateien für drift-hinweis
