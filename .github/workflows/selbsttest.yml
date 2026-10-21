@@ -1,0 +1,30 @@
+name: Selbsttest
+
+on: [push, pull_request]
+
+# Deny-all auf Top-Ebene; Jobs überschreiben nur, was sie brauchen.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  shell-test:
+    name: Shell-Tests (pruefe-repo.test.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: pruefe-repo.test.sh ausführen
+        run: bash standard/pruefe-repo.test.sh
+
+  fixture-m:
+    name: Fixture profil-M gegen doc-standard.yml
+    uses: ./.github/workflows/doc-standard.yml
+    with:
+      pfad: tests/fixtures/profil-M
