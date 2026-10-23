@@ -104,19 +104,18 @@ jobs:
           ref: ${{ inputs.standard-ref }}
           path: .doc-standard
           persist-credentials: false
-      - id: dateien
-        shell: bash
+      # markdownlint-cli2 als CLI statt der Action, gelintet in einer Kopie (markdown-lint.sh):
+      # im Repo lädt es `.markdownlint*.cjs/.mjs` des geprüften Repos per require/import.
+      - shell: bash
         env:
           BASIS: ${{ needs.aenderungen.outputs.basis }}
           PFAD: ${{ inputs.pfad }}
         run: |
-          bash .doc-standard/standard/md-dateien.sh "$BASIS" "$PFAD" > md-nur.txt
-          # ':' vor jedem Pfad: markdownlint-cli2 liest den Namen dann wörtlich, nicht als Glob.
-          { echo 'liste<<ENDE'; sed 's/^/:/' md-nur.txt; echo 'ENDE'; } >> "$GITHUB_OUTPUT"
-      - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
-        with:
-          config: .doc-standard/.markdownlint-cli2.yaml
-          globs: ${{ steps.dateien.outputs.liste }}
+          # Außerhalb des Repos installieren: npm läse sonst eine `.npmrc` des geprüften Repos
+          # (z. B. eine fremde Registry) und führte von dort geladenen Code aus.
+          (cd "$RUNNER_TEMP" && npm install --global --ignore-scripts markdownlint-cli2@0.24.0)
+          bash .doc-standard/standard/md-dateien.sh "$BASIS" "$PFAD" > "$RUNNER_TEMP/md-nur.txt"
+          bash .doc-standard/standard/markdown-lint.sh "$RUNNER_TEMP/md-nur.txt" .doc-standard/.markdownlint-cli2.yaml
 
   links:
     needs: aenderungen

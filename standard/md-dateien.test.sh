@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Selbsttest für md-dateien.sh und links-pruefen.sh.
+# Selbsttest für md-dateien.sh, links-pruefen.sh und markdown-lint.sh.
 #
 # Geprüft wird mit Dateinamen, an denen die erste Fassung des Workflows scheiterte: Umlaut
 # (von git gequotet, still übersprungen), Leerzeichen (zerfiel in zwei Argumente), Glob-
@@ -7,13 +7,21 @@
 # Jede Datei mit kaputtem Link muss lychee rot machen: daran ist belegt, dass sie wirklich
 # geprüft wurde und nicht bloß in der Liste stand.
 #
-# Ohne lychee: Exit 2, NICHT GEPRÜFT. Gegenprobe am Ende der Datei.
+# markdown-lint.sh: präparierte `.markdownlint*.cjs/.mjs` im Repo legen eine Marke an und
+# schalten alle Regeln ab. Weder darf die Marke entstehen noch der Regelverstoß verschwinden.
+#
+# Ohne lychee oder markdownlint-cli2: Exit 2, NICHT GEPRÜFT. Gegenproben am Ende der Datei.
 set -uo pipefail
 
 HIER="$(cd "$(dirname "$0")" && pwd)"
 LYCHEE="${LYCHEE:-lychee}"
-MIN_PROBEN=12
+MARKDOWNLINT="${MARKDOWNLINT:-markdownlint-cli2}"
+REGELSATZ="${REGELSATZ:-$HIER/../.markdownlint-cli2.yaml}"
+MIN_PROBEN=18
 command -v "$LYCHEE" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: lychee fehlt ($LYCHEE)."; exit 2; }
+command -v "$MARKDOWNLINT" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: markdownlint-cli2 fehlt ($MARKDOWNLINT)."; exit 2; }
+[ -f "$REGELSATZ" ] || { echo "NICHT GEPRÜFT: Regelsatz fehlt ($REGELSATZ)."; exit 2; }
+REGELSATZ="$(cd "$(dirname "$REGELSATZ")" && pwd)/$(basename "$REGELSATZ")"
 
 PASS=0
 FAIL=0
@@ -67,6 +75,28 @@ printf 'basis.md\n' > "$WEG/heil"
 LYCHEE="$LYCHEE" bash "$HIER/links-pruefen.sh" "$WEG/heil" > "$WEG/out" 2>&1
 pruefe "Datei ohne kaputten Link → grün" 0 "$?"
 
+# markdown-lint.sh: Konfiguration mit Code aus dem geprüften Repo darf nie laufen.
+mkdir -p docs
+for k in .markdownlint-cli2.cjs docs/.markdownlint.cjs docs/.markdownlint-cli2.mjs; do
+  marke="$WEG/marke-$(basename "$k")"
+  case "$k" in
+    *.mjs) printf 'import fs from "node:fs"; fs.writeFileSync("%s", "x");\nexport default {config: {default: false}};\n' "$marke" > "$k" ;;
+    *)     printf 'require("fs").writeFileSync("%s", "x");\nmodule.exports = {config: {default: false}};\n' "$marke" > "$k" ;;
+  esac
+done
+printf '# Titel\n\n#kein-leerzeichen\n' > 'docs/Übersicht.md'
+printf '# Sauber\n\nText.\n' > docs/sauber.md
+printf '%s\n' 'docs/Übersicht.md' > "$WEG/lint-rot"
+MARKDOWNLINT="$MARKDOWNLINT" bash "$HIER/markdown-lint.sh" "$WEG/lint-rot" "$REGELSATZ" > "$WEG/out" 2>&1
+pruefe "markdownlint: Verstoß in 'docs/Übersicht.md' → Exit 1" 1 "$?"
+pruefe "markdownlint: MD018 für genau diese Datei gemeldet" 1 "$(grep -c 'Übersicht.md:3.*MD018' "$WEG/out")"
+pruefe "markdownlint: keine Repo-Konfiguration ausgeführt" 0 "$(find "$WEG" -maxdepth 1 -name 'marke-*' | wc -l | tr -d ' ')"
+printf '%s\n' docs/sauber.md '-strich.md' > "$WEG/lint-gruen"
+printf '# t\n' > '-strich.md'
+MARKDOWNLINT="$MARKDOWNLINT" bash "$HIER/markdown-lint.sh" "$WEG/lint-gruen" "$REGELSATZ" > "$WEG/out" 2>&1
+pruefe "markdownlint: saubere Dateien → Exit 0" 0 "$?"
+pruefe "markdownlint: beide Dateien gelintet" 1 "$(grep -c 'Linting: 2 file' "$WEG/out")"
+
 echo
 PROBEN=$((PASS + FAIL))
 if [ "$PROBEN" -lt "$MIN_PROBEN" ]; then
@@ -81,3 +111,5 @@ echo "PROBEN=$PROBEN FEHLER=$FAIL"
 #   Nur `core.quotePath=false` zu entfernen bleibt grün: `-z` gibt Namen ohnehin wörtlich aus.
 # - links-pruefen.sh ohne Glob-Escaping → '[k].md' nur gewarnt, nicht geprüft, rot.
 # - links-pruefen.sh mit `eval` wie die lychee-Action → MARKE entsteht, rot (4 Proben).
+# - markdown-lint.sh ohne `cd` in die Kopie (Lint im Repo) → Marken entstehen und der
+#   Verstoß verschwindet, rot (3 Proben).
