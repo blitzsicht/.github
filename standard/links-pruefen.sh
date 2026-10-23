@@ -8,6 +8,11 @@
 # Dateiname wie `x$(befehl).md` lief dort als Befehl. Hier geht jeder Name als eigenes
 # Argument an lychee, ohne dass eine Shell ihn je als Text liest.
 #
+# Ohne --config lädt lychee die `lychee.toml` des geprüften Repos, und deren `preprocess`
+# startet für jede Datei ein beliebiges Kommando (mit `command = "sh"` läuft die .md-Datei
+# selbst als Skript, die Prüfung entfällt still). Deshalb immer eine leere Konfiguration
+# von außerhalb des Repos. `.lycheeignore` liest lychee weiterhin: sie lockert nur.
+#
 # lychee behandelt Eingaben als Glob: `[x].md` fände keine Datei und würde nur gewarnt,
 # nicht geprüft. Deshalb werden [ ] * ? escaped. Das `./` davor verhindert, dass ein Name
 # mit führendem `-` als Option gilt.
@@ -37,6 +42,8 @@ if [ "${#dateien[@]}" -eq 0 ]; then
   echo "Keine Markdown-Dateien in der Liste."
   exit 0
 fi
+LEER=$(mktemp)
+trap 'rm -f "$LEER"' EXIT
 echo "Prüfe ${#dateien[@]} Markdown-Datei(en)."
 # Nur interne Links (--offline). Externe Links prüft der PR bewusst nicht.
-exec "$LYCHEE" --offline --no-progress -- "${dateien[@]}"
+"$LYCHEE" --config "$LEER" --offline --no-progress -- "${dateien[@]}"

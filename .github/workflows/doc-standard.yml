@@ -172,7 +172,9 @@ jobs:
           echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
           tar -xzf gitleaks.tgz gitleaks
           if [ -n "$BASIS" ]; then
-            ./gitleaks git --no-banner --redact --log-opts="${BASIS}..HEAD" .
+            # --text: sonst macht `* -diff` in der .gitattributes des Repos jeden Diff „binär“,
+            # gitleaks sieht ~0 Bytes und meldet „no leaks found“ (nachgestellt, mit --text: Fund).
+            ./gitleaks git --no-banner --redact --log-opts="--text ${BASIS}..HEAD" .
           else
             ./gitleaks dir --no-banner --redact .
           fi

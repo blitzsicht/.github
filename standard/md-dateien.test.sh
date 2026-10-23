@@ -17,7 +17,7 @@ HIER="$(cd "$(dirname "$0")" && pwd)"
 LYCHEE="${LYCHEE:-lychee}"
 MARKDOWNLINT="${MARKDOWNLINT:-markdownlint-cli2}"
 REGELSATZ="${REGELSATZ:-$HIER/../.markdownlint-cli2.yaml}"
-MIN_PROBEN=18
+MIN_PROBEN=20
 command -v "$LYCHEE" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: lychee fehlt ($LYCHEE)."; exit 2; }
 command -v "$MARKDOWNLINT" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: markdownlint-cli2 fehlt ($MARKDOWNLINT)."; exit 2; }
 [ -f "$REGELSATZ" ] || { echo "NICHT GEPRÜFT: Regelsatz fehlt ($REGELSATZ)."; exit 2; }
@@ -71,6 +71,15 @@ for n in "${NAMEN[@]}"; do
 done
 pruefe "Kein Name wurde als Befehl ausgeführt" nein "$([ -e MARKE ] && echo ja || echo nein)"
 
+# lychee.toml im Repo: `preprocess` würde jede Datei durch sh schicken.
+printf 'preprocess = { command = "sh" }\n' > lychee.toml
+printf 'touch "%s/MARKE-lychee"\n\n[kaputt](fehlt-toml.md)\n' "$WEG" > toml.md
+printf 'toml.md\n' > "$WEG/eine"
+LYCHEE="$LYCHEE" bash "$HIER/links-pruefen.sh" "$WEG/eine" > "$WEG/out" 2>&1
+pruefe "lychee.toml des Repos: keine Ausführung" nein "$([ -e "$WEG/MARKE-lychee" ] && echo ja || echo nein)"
+pruefe "lychee.toml des Repos: kaputter Link weiter gemeldet" 1 "$(grep -c 'fehlt-toml.md' "$WEG/out")"
+rm -f lychee.toml
+
 printf 'basis.md\n' > "$WEG/heil"
 LYCHEE="$LYCHEE" bash "$HIER/links-pruefen.sh" "$WEG/heil" > "$WEG/out" 2>&1
 pruefe "Datei ohne kaputten Link → grün" 0 "$?"
@@ -111,5 +120,7 @@ echo "PROBEN=$PROBEN FEHLER=$FAIL"
 #   Nur `core.quotePath=false` zu entfernen bleibt grün: `-z` gibt Namen ohnehin wörtlich aus.
 # - links-pruefen.sh ohne Glob-Escaping → '[k].md' nur gewarnt, nicht geprüft, rot.
 # - links-pruefen.sh mit `eval` wie die lychee-Action → MARKE entsteht, rot (4 Proben).
-# - markdown-lint.sh ohne `cd` in die Kopie (Lint im Repo) → Marken entstehen und der
-#   Verstoß verschwindet, rot (3 Proben).
+# - markdown-lint.sh ohne `cd` in die Kopie (Lint im Repo) → Marken entstehen, rot (1 Probe).
+#   Die MD018-Probe schlägt dabei nicht an: --config übersteuert das `default: false` der
+#   Repo-Konfiguration. Den Schutz trägt allein die Marken-Probe.
+# - links-pruefen.sh ohne --config → lychee.toml des Repos läuft, rot (2 Proben).

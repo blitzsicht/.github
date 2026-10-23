@@ -35,7 +35,7 @@ jobs:
       - run: bash standard/vorlagen.test.sh
 
   # Dateiliste, Linkprüfung und Lint des reusable Workflows mit gefährlichen Dateinamen und
-  # präparierter Repo-Konfiguration, dazu die vier Gegenproben aus dem Kopf von md-dateien.test.sh: jede muss den Test rot machen.
+  # präparierter Repo-Konfiguration, dazu die fünf Gegenproben aus dem Kopf von md-dateien.test.sh: jede muss den Test rot machen.
   md-dateien-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -86,9 +86,9 @@ jobs:
           d=$(kopie)
           python3 - "$d/links-pruefen.sh" <<'PY'
           import sys; p = sys.argv[1]; s = open(p).read()
-          a = 'exec "$LYCHEE" --offline --no-progress -- "${dateien[@]}"'
+          a = '"$LYCHEE" --config "$LEER" --offline --no-progress -- "${dateien[@]}"'
           if s.count(a) != 1: sys.exit("Sabotage nicht angebracht")
-          open(p, 'w').write(s.replace(a, 'eval "$LYCHEE --offline --no-progress ${dateien[*]}"'))
+          open(p, 'w').write(s.replace(a, 'eval "$LYCHEE --config $LEER --offline --no-progress ${dateien[*]}"'))
           PY
           rot "Linkprüfung per eval" "$d"
           # 4) Lint im Repo statt in der Kopie: Repo-Konfiguration (.cjs/.mjs) liefe mit
@@ -99,6 +99,14 @@ jobs:
           open(p, 'w').write(s.replace(a, ':'))
           PY
           rot "Lint im Repo statt in der Kopie" "$d"
+          # 5) lychee ohne eigene leere Konfiguration: lychee.toml des Repos liefe mit
+          d=$(kopie)
+          python3 - "$d/links-pruefen.sh" <<'PY'
+          import sys; p = sys.argv[1]; s = open(p).read(); a = '"$LYCHEE" --config "$LEER" '
+          if s.count(a) != 1: sys.exit("Sabotage nicht angebracht")
+          open(p, 'w').write(s.replace(a, '"$LYCHEE" '))
+          PY
+          rot "Linkprüfung mit lychee.toml des Repos" "$d"
 
   # Der reusable Workflow einmal gegen ein gültiges Testverzeichnis, mit Skript und Regeln
   # aus genau diesem Commit (standard-ref), nicht aus main.
