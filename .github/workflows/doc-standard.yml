@@ -47,6 +47,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: ${{ env.STANDARD_REPO }}
+          ref: ${{ inputs.standard-ref }}
+          path: .doc-standard
+          persist-credentials: false
       - id: diff
         shell: bash
         env:
@@ -57,12 +63,7 @@ jobs:
           basis="${PR_BASIS:-$VORHER}"
           # Neuer Branch (before = 000…) oder unbekannte Basis: alles gilt als geändert.
           if [ -z "$basis" ] || ! git cat-file -e "$basis^{commit}" 2>/dev/null; then basis=""; fi
-          if [ -n "$basis" ]; then
-            git diff --name-only --diff-filter=ACMR "$basis" HEAD -- "$PFAD" > md.txt
-          else
-            git ls-files -- "$PFAD" > md.txt
-          fi
-          grep -E '\.md$' md.txt > md-nur.txt || true
+          bash .doc-standard/standard/md-dateien.sh "$basis" "$PFAD" > md-nur.txt
           echo "basis=$basis" >> "$GITHUB_OUTPUT"
           if [ -s md-nur.txt ]; then echo "md=true" >> "$GITHUB_OUTPUT"; else echo "md=false" >> "$GITHUB_OUTPUT"; fi
           echo "Geänderte Markdown-Dateien: $(wc -l < md-nur.txt)"
@@ -109,8 +110,7 @@ jobs:
           BASIS: ${{ needs.aenderungen.outputs.basis }}
           PFAD: ${{ inputs.pfad }}
         run: |
-          if [ -n "$BASIS" ]; then git diff --name-only --diff-filter=ACMR "$BASIS" HEAD -- "$PFAD"; else git ls-files -- "$PFAD"; fi \
-            | grep -E '\.md$' > md-nur.txt || true
+          bash .doc-standard/standard/md-dateien.sh "$BASIS" "$PFAD" > md-nur.txt
           # ':' vor jedem Pfad: markdownlint-cli2 liest den Namen dann wörtlich, nicht als Glob.
           { echo 'liste<<ENDE'; sed 's/^/:/' md-nur.txt; echo 'ENDE'; } >> "$GITHUB_OUTPUT"
       - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
@@ -129,20 +129,27 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
-      - id: dateien
-        shell: bash
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: ${{ env.STANDARD_REPO }}
+          ref: ${{ inputs.standard-ref }}
+          path: .doc-standard
+          persist-credentials: false
+      # lychee als CLI mit Prüfsumme statt der lychee-Action: die Action setzt ihre Argumente
+      # per eval in eine Shell-Zeile, ein Dateiname wie `x$(befehl).md` lief dort als Befehl.
+      - shell: bash
         env:
           BASIS: ${{ needs.aenderungen.outputs.basis }}
           PFAD: ${{ inputs.pfad }}
+          LYCHEE_VERSION: 0.24.2
+          LYCHEE_SHA256: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a
         run: |
-          if [ -n "$BASIS" ]; then git diff --name-only --diff-filter=ACMR "$BASIS" HEAD -- "$PFAD"; else git ls-files -- "$PFAD"; fi \
-            | grep -E '\.md$' | tr '\n' ' ' > md-nur.txt || true
-          echo "liste=$(cat md-nur.txt)" >> "$GITHUB_OUTPUT"
-      # Nur interne Links (--offline). Externe Links prüft der PR bewusst nicht.
-      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8  # v2.9.0
-        with:
-          args: --offline --no-progress ${{ steps.dateien.outputs.liste }}
-          fail: true
+          curl -fsSL -o "$RUNNER_TEMP/lychee.tgz" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${LYCHEE_SHA256}  $RUNNER_TEMP/lychee.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/lychee.tgz" -C "$RUNNER_TEMP" --strip-components=1 lychee-x86_64-unknown-linux-gnu/lychee
+          bash .doc-standard/standard/md-dateien.sh "$BASIS" "$PFAD" > "$RUNNER_TEMP/md-nur.txt"
+          LYCHEE="$RUNNER_TEMP/lychee" bash .doc-standard/standard/links-pruefen.sh "$RUNNER_TEMP/md-nur.txt"
 
   secrets:
     needs: aenderungen
