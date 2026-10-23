@@ -1,0 +1,10 @@
+# Architektur: {{ name }}
+
+## Überblick
+
+```mermaid
+flowchart LR
+    eingabe[Eingabe] --> kern[{{ name }}] --> ausgabe[Ausgabe]
+```
+
+Entscheidungen zur Architektur stehen in [decisions/](decisions/).

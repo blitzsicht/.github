@@ -1,0 +1,38 @@
+# copier-Vorlage des Doku-Standards.
+#   copier copy gh:blitzsicht/.github <ziel>      neues Repo oder Erstausstattung
+#   copier update                                 Gerüst nachziehen (3-Wege-Merge)
+# Dateinamen mit {% if … %} entstehen nur für die Profile, die sie verlangen.
+_subdirectory: vorlagen
+_templates_suffix: ''
+_envops:
+  keep_trailing_newline: true
+
+profil:
+  type: str
+  help: "Profil: S = Skript/Experiment, M = Werkzeug/Integration, L = geschäftskritisch, W = Website"
+  choices: [S, M, L, W]
+
+name:
+  type: str
+  help: "Repo-Name, z. B. beispiel-werkzeug"
+
+zweck:
+  type: str
+  help: "Ein Satz: wozu gibt es das Repo?"
+
+betrieb_geplant:
+  type: str
+  help: "Läuft es geplant oder unbeaufsichtigt (Zeitplan, Dienst)?"
+  choices: ["ja", "nein"]
+  default: "nein"
+
+# Inhaltsdateien gehören nach dem ersten Anlegen dem Repo; copier update lässt sie stehen.
+# AGENTS.md, CLAUDE.md und der Aufruf-Workflow bleiben verwaltet (3-Wege-Merge).
+_skip_if_exists:
+  - README.md
+  - CHANGELOG.md
+  - docs/INDEX.md
+  - docs/BETRIEB.md
+  - docs/ARCHITEKTUR.md
+  - docs/RUNBOOK.md
+  - docs/decisions/0001-doku-standard.md

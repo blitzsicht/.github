@@ -1,0 +1,120 @@
+name: selbsttest
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: selbsttest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruefe-repo-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - run: bash standard/pruefe-repo.test.sh
+
+  vorlagen-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+      # Versionen fest, damit ein neues Release den Selbsttest nicht still ändert.
+      - run: pipx install copier==9.19.1 && npm install --global markdownlint-cli2@0.24.0
+      - run: bash standard/vorlagen.test.sh
+
+  # Dateiliste, Linkprüfung und Lint des reusable Workflows mit gefährlichen Dateinamen und
+  # präparierter Repo-Konfiguration, dazu die fünf Gegenproben aus dem Kopf von md-dateien.test.sh: jede muss den Test rot machen.
+  md-dateien-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - name: lychee installieren (gleiche Version und Prüfsumme wie im reusable Workflow)
+        shell: bash
+        env:
+          LYCHEE_VERSION: 0.24.2
+          LYCHEE_SHA256: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/lychee.tgz" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${LYCHEE_SHA256}  $RUNNER_TEMP/lychee.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/lychee.tgz" -C "$RUNNER_TEMP" --strip-components=1 lychee-x86_64-unknown-linux-gnu/lychee
+          echo "LYCHEE=$RUNNER_TEMP/lychee" >> "$GITHUB_ENV"
+      - run: npm install --global markdownlint-cli2@0.24.0
+      - run: bash standard/md-dateien.test.sh
+      - name: Gegenproben (jede Sabotage muss rot werden)
+        shell: bash
+        run: |
+          rot() {  # rot <name> <verzeichnis>: Test muss mit Exit 1 enden (nicht 2 = NICHT GEPRÜFT)
+            local rc=0; bash "$2/md-dateien.test.sh" > "$2/out" 2>&1 || rc=$?
+            if [ "$rc" -eq 1 ]; then echo "OK: $1 wird erkannt"
+            else echo "::error::$1 blieb unerkannt (rc=$rc)"; cat "$2/out"; exit 1; fi
+          }
+          kopie() { local d; d=$(mktemp -d); cp standard/*.sh "$d/"; echo "$d"; }
+          # Regelsatz fest aus dem Checkout: fehlte er in der Kopie, endete der Test mit 2, nicht 1.
+          export REGELSATZ="$PWD/.markdownlint-cli2.yaml"
+          # 1) Dateiliste ohne -z (alte Fassung aus dem Workflow)
+          d=$(kopie)
+          # shellcheck disable=SC2016  # Skripttext, wird erst in der Kopie ausgeführt
+          printf '%s\n' '#!/usr/bin/env bash' \
+            'if [ -n "${1-}" ]; then git diff --name-only --diff-filter=ACMR "$1" HEAD -- "${2:-.}"; else git ls-files -- "${2:-.}"; fi | grep -E "\.md$" || true' \
+            > "$d/md-dateien.sh"
+          rot "Dateiliste ohne -z" "$d"
+          # 2) kein Glob-Escaping
+          d=$(kopie)
+          python3 - "$d/links-pruefen.sh" <<'PY'
+          import sys; p = sys.argv[1]; s = open(p).read(); a = 'dateien+=("./$esc")'
+          if s.count(a) != 1: sys.exit("Sabotage nicht angebracht")
+          open(p, 'w').write(s.replace(a, 'dateien+=("./$name")'))
+          PY
+          rot "Linkprüfung ohne Glob-Escaping" "$d"
+          # 3) eval wie in der lychee-Action
+          d=$(kopie)
+          python3 - "$d/links-pruefen.sh" <<'PY'
+          import sys; p = sys.argv[1]; s = open(p).read()
+          a = '"$LYCHEE" --config "$LEER" --offline --no-progress -- "${dateien[@]}"'
+          if s.count(a) != 1: sys.exit("Sabotage nicht angebracht")
+          open(p, 'w').write(s.replace(a, 'eval "$LYCHEE --config $LEER --offline --no-progress ${dateien[*]}"'))
+          PY
+          rot "Linkprüfung per eval" "$d"
+          # 4) Lint im Repo statt in der Kopie: Repo-Konfiguration (.cjs/.mjs) liefe mit
+          d=$(kopie)
+          python3 - "$d/markdown-lint.sh" <<'PY'
+          import sys; p = sys.argv[1]; s = open(p).read(); a = 'cd "$KOPIE" || exit 2'
+          if s.count(a) != 1: sys.exit("Sabotage nicht angebracht")
+          open(p, 'w').write(s.replace(a, ':'))
+          PY
+          rot "Lint im Repo statt in der Kopie" "$d"
+          # 5) lychee ohne eigene leere Konfiguration: lychee.toml des Repos liefe mit
+          d=$(kopie)
+          python3 - "$d/links-pruefen.sh" <<'PY'
+          import sys; p = sys.argv[1]; s = open(p).read(); a = '"$LYCHEE" --config "$LEER" '
+          if s.count(a) != 1: sys.exit("Sabotage nicht angebracht")
+          open(p, 'w').write(s.replace(a, '"$LYCHEE" '))
+          PY
+          rot "Linkprüfung mit lychee.toml des Repos" "$d"
+
+  # Der reusable Workflow einmal gegen ein gültiges Testverzeichnis, mit Skript und Regeln
+  # aus genau diesem Commit (standard-ref), nicht aus main.
+  doc-standard-gueltig:
+    uses: ./.github/workflows/doc-standard.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      pfad: tests/fixtures/profil-M
+      standard-ref: ${{ github.sha }}
