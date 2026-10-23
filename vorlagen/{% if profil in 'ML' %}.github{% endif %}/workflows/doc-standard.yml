@@ -8,4 +8,7 @@ permissions:
   pull-requests: write
 jobs:
   doc-standard:
-    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@main
+    # Beide Refs gleich halten: Workflow und Prüfskript kommen aus demselben Stand.
+    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.0
+    with:
+      standard-ref: standard-v1.0
