@@ -4,5 +4,8 @@ on: {pull_request: {}, push: {branches: [main]}}
 permissions: {contents: read, pull-requests: write}
 jobs:
   doc-standard:
-    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.0
-    with: {standard-ref: standard-v1.0}
+    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.1
+    with:
+      standard-ref: standard-v1.1
+      # Eigener Runner (x64 oder arm64), z. B. über eine Org-Variable:
+      # runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}

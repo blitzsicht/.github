@@ -3,6 +3,13 @@
 # Prüft das aufrufende Repo mit standard/pruefe-repo.sh aus DIESEM Repo (keine Kopie im Workflow),
 # lintet nur geänderte Markdown-Dateien, prüft deren interne Links, scannt den Diff auf Secrets
 # und schreibt auf Wunsch einen Drift-Hinweis als PR-Kommentar (nie ein Fehlschlag).
+#
+# Seit v1.1:
+# - `runs-on` wählt den Runner, auch einen eigenen mit arm64. Werkzeuge lädt
+#   standard/werkzeuge-laden.sh passend zur Architektur.
+# - Lint und Links laufen mit Ratchet (standard/basis-vergleich.sh): Neue Dateien werden streng
+#   geprüft. Geänderte Dateien dürfen nicht mehr Befunde haben als an der Basis, damit ein Repo
+#   mit Altlasten den Standard einführen kann, ohne vorher alles zu bereinigen.
 name: doc-standard
 
 on:
@@ -24,6 +31,10 @@ on:
         description: "Stand von blitzsicht/.github, aus dem Skript und Lint-Regeln kommen. Gleich dem Ref im uses: halten."
         type: string
         default: 'main'
+      runs-on:
+        description: "Runner-Label für alle Jobs, z. B. ein eigener Runner. Linux mit bash, curl, git, npm; x64 oder arm64."
+        type: string
+        default: 'ubuntu-latest'
 
 permissions: {}
 
@@ -36,7 +47,7 @@ env:
 
 jobs:
   aenderungen:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -69,7 +80,7 @@ jobs:
           echo "Geänderte Markdown-Dateien: $(wc -l < md-nur.txt)"
 
   pruefe-repo:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -90,7 +101,7 @@ jobs:
   markdownlint:
     needs: aenderungen
     if: needs.aenderungen.outputs.md == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -111,16 +122,19 @@ jobs:
           BASIS: ${{ needs.aenderungen.outputs.basis }}
           PFAD: ${{ inputs.pfad }}
         run: |
+          command -v npm >/dev/null || { echo "::error::npm fehlt auf dem Runner"; exit 1; }
           # Außerhalb des Repos installieren: npm läse sonst eine `.npmrc` des geprüften Repos
-          # (z. B. eine fremde Registry) und führte von dort geladenen Code aus.
-          (cd "$RUNNER_TEMP" && npm install --global --ignore-scripts markdownlint-cli2@0.24.0)
-          bash .doc-standard/standard/md-dateien.sh "$BASIS" "$PFAD" > "$RUNNER_TEMP/md-nur.txt"
-          bash .doc-standard/standard/markdown-lint.sh "$RUNNER_TEMP/md-nur.txt" .doc-standard/.markdownlint-cli2.yaml
+          # (z. B. eine fremde Registry) und führte von dort geladenen Code aus. Nicht global:
+          # auf einem eigenen Runner fehlt dem Job-Nutzer dafür meist das Schreibrecht.
+          (cd "$RUNNER_TEMP" && npm install --prefix "$RUNNER_TEMP/mdl" --ignore-scripts --no-audit --no-fund markdownlint-cli2@0.24.0)
+          export MARKDOWNLINT="$RUNNER_TEMP/mdl/node_modules/.bin/markdownlint-cli2"
+          export REGELSATZ="$PWD/.doc-standard/.markdownlint-cli2.yaml"
+          bash .doc-standard/standard/basis-vergleich.sh lint "$BASIS" "$PFAD"
 
   links:
     needs: aenderungen
     if: needs.aenderungen.outputs.md == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -140,19 +154,14 @@ jobs:
         env:
           BASIS: ${{ needs.aenderungen.outputs.basis }}
           PFAD: ${{ inputs.pfad }}
-          LYCHEE_VERSION: 0.24.2
-          LYCHEE_SHA256: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/lychee.tgz" \
-            "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz"
-          echo "${LYCHEE_SHA256}  $RUNNER_TEMP/lychee.tgz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/lychee.tgz" -C "$RUNNER_TEMP" --strip-components=1 lychee-x86_64-unknown-linux-gnu/lychee
-          bash .doc-standard/standard/md-dateien.sh "$BASIS" "$PFAD" > "$RUNNER_TEMP/md-nur.txt"
-          LYCHEE="$RUNNER_TEMP/lychee" bash .doc-standard/standard/links-pruefen.sh "$RUNNER_TEMP/md-nur.txt"
+          LYCHEE=$(bash .doc-standard/standard/werkzeuge-laden.sh lychee "$RUNNER_TEMP/werkzeuge")
+          export LYCHEE
+          bash .doc-standard/standard/basis-vergleich.sh links "$BASIS" "$PFAD"
 
   secrets:
     needs: aenderungen
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -160,28 +169,32 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: ${{ env.STANDARD_REPO }}
+          ref: ${{ inputs.standard-ref }}
+          path: .doc-standard
+          persist-credentials: false
       # gitleaks als CLI mit Prüfsumme: die gitleaks-Action verlangt für Organisationen eine Lizenz.
+      # Geladen nach $RUNNER_TEMP, damit das Programm nicht selbst im gescannten Baum liegt.
       - shell: bash
         env:
           BASIS: ${{ needs.aenderungen.outputs.basis }}
-          GITLEAKS_VERSION: 8.30.1
-          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          curl -fsSL -o gitleaks.tgz \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
-          tar -xzf gitleaks.tgz gitleaks
+          GITLEAKS=$(bash .doc-standard/standard/werkzeuge-laden.sh gitleaks "$RUNNER_TEMP/werkzeuge")
+          # Der Standard-Checkout gehört nicht zum geprüften Repo; ohne Basis scannte `dir` ihn mit.
+          rm -rf .doc-standard
           if [ -n "$BASIS" ]; then
             # --text: sonst macht `* -diff` in der .gitattributes des Repos jeden Diff „binär“,
             # gitleaks sieht ~0 Bytes und meldet „no leaks found“ (nachgestellt, mit --text: Fund).
-            ./gitleaks git --no-banner --redact --log-opts="--text ${BASIS}..HEAD" .
+            "$GITLEAKS" git --no-banner --redact --log-opts="--text ${BASIS}..HEAD" .
           else
-            ./gitleaks dir --no-banner --redact .
+            "$GITLEAKS" dir --no-banner --redact .
           fi
 
   drift-hinweis:
     if: github.event_name == 'pull_request' && inputs.drift-pfade != ''
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 5
     continue-on-error: true
     permissions:
