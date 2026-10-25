@@ -16,7 +16,10 @@
 # - Eigene Runner: Dieser Workflow liest Dateien aus dem PR. Für PRs aus Forks keinen Runner mit
 #   Zugang zu internen Netzen oder Zugangsdaten nehmen; Symlinks lehnt basis-vergleich.sh ab.
 # - Eine Umbenennung über die Grenze von `pfad` hinweg gilt als neue Datei (streng).
-# - `.lycheeignore` und `.gitleaks.toml` des geprüften Repos werden nicht gelesen.
+# - Das geprüfte Repo darf die Prüfung sichtbar lockern: `.lycheeignore` (liest lychee),
+#   `<!-- markdownlint-disable -->` in einer Datei, Pfade unter den `ignores` des Regelsatzes.
+#   Die Prüfung schützt vor Versehen und vor Code aus dem PR, nicht vor einem Autor, der sie
+#   im Diff abschaltet. `.gitleaks.toml` des Repos liest der Secrets-Job nicht.
 # - markdownlint-cli2 ist auf die Version gepinnt, seine Abhängigkeiten nicht (kein Lockfile).
 name: doc-standard
 
@@ -47,10 +50,11 @@ on:
 permissions: {}
 
 concurrency:
-  # runs-on und pfad im Namen: zwei Aufrufe aus demselben Lauf (Matrix, mehrere Teilbäume)
-  # brachen sich sonst gegenseitig ab.
-  group: doc-standard-${{ github.workflow }}-${{ github.ref }}-${{ inputs.runs-on }}-${{ inputs.pfad }}
-  cancel-in-progress: true
+  # runs-on, pfad und profil im Namen: zwei Aufrufe aus demselben Lauf (Matrix, mehrere
+  # Teilbäume) brachen sich sonst gegenseitig ab. Abbrechen nur in PRs: auf einem Branch bliebe
+  # sonst der frühere von zwei schnellen Pushes ungeprüft.
+  group: doc-standard-${{ github.workflow }}-${{ github.ref }}-${{ inputs.runs-on }}-${{ inputs.pfad }}-${{ inputs.profil }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   STANDARD_REPO: blitzsicht/.github
@@ -84,9 +88,11 @@ jobs:
           basis="${PR_BASIS:-$VORHER}"
           # Neuer Branch (before = 000…) oder unbekannte Basis: alles gilt als geändert.
           if [ -z "$basis" ] || ! git cat-file -e "$basis^{commit}" 2>/dev/null; then basis=""; fi
-          bash .doc-standard/standard/md-dateien.sh "$basis" "$PFAD" > md-nur.txt
+          bash .doc-standard/standard/md-dateien.sh "$basis" "$PFAD" > md-nur.txt 2> md-uebersprungen.txt
+          cat md-uebersprungen.txt >&2
           echo "basis=$basis" >> "$GITHUB_OUTPUT"
-          if [ -s md-nur.txt ]; then echo "md=true" >> "$GITHUB_OUTPUT"; else echo "md=false" >> "$GITHUB_OUTPUT"; fi
+          # Auch übersprungene Namen öffnen das Tor: die Prüfjobs melden sie dann als NICHT GEPRÜFT.
+          if [ -s md-nur.txt ] || [ -s md-uebersprungen.txt ]; then echo "md=true" >> "$GITHUB_OUTPUT"; else echo "md=false" >> "$GITHUB_OUTPUT"; fi
           echo "Geänderte Markdown-Dateien: $(wc -l < md-nur.txt)"
 
   pruefe-repo:

@@ -22,7 +22,7 @@ HIER="$(cd "$(dirname "$0")" && pwd)"
 LYCHEE="${LYCHEE:-lychee}"
 MARKDOWNLINT="${MARKDOWNLINT:-markdownlint-cli2}"
 REGELSATZ="${REGELSATZ:-$HIER/../.markdownlint-cli2.yaml}"
-MIN_PROBEN=40
+MIN_PROBEN=48
 command -v "$LYCHEE" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: lychee fehlt ($LYCHEE)."; exit 2; }
 command -v "$MARKDOWNLINT" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: markdownlint-cli2 fehlt ($MARKDOWNLINT)."; exit 2; }
 [ -f "$REGELSATZ" ] || { echo "NICHT GEPRÜFT: Regelsatz fehlt ($REGELSATZ)."; exit 2; }
@@ -169,12 +169,33 @@ git checkout -q -B s14 "$LINKBASIS"
 git rm -q alt.md && altlast alt > alt.md && git add -A -- . && git commit -qm szenario
 lauf lint "$LINKBASIS"; pruefe "Symlink → Datei mit Befund: rc 1" 1 "$RC"
 pruefe "Symlink → Datei: streng als neue Datei" 1 "$(hat 'FEHLER  1 Befund(e) in neuen Dateien')"
+# Das Tor im Workflow (gibt es etwas zu prüfen?) liest md-dateien.sh: die Typänderung muss drinstehen.
+pruefe "Tor sieht die Typänderung" alt.md "$(bash "$HIER/md-dateien.sh" "$LINKBASIS" .)"
 
 # 15) Name mit Zeilenumbruch: nicht still übersprungen, sondern NICHT GEPRÜFT.
 umbruch() { printf '# U\n' > "$(printf 'zeile\numbruch.md')"; }
 szenario s15 umbruch
 lauf lint "$BASIS";  pruefe "Zeilenumbruch im Namen: rc 2" 2 "$RC"
-pruefe "Zeilenumbruch im Namen: gemeldet" 1 "$(hat 'NICHT GEPRÜFT (Zeilenumbruch im Namen)')"
+pruefe "Zeilenumbruch im Namen: gemeldet" 1 "$(hat 'NICHT GEPRÜFT (Zeilenumbruch oder Tab im Namen)')"
+# Das Tor öffnet auch bei übersprungenen Namen: sie stehen auf stderr.
+pruefe "Tor meldet den Zeilenumbruch-Namen" 1 "$(bash "$HIER/md-dateien.sh" "$BASIS" . 2>&1 >/dev/null | grep -c 'übersprungen')"
+
+# 17) Altlast mit Tab im Namen, umbenannt (git erkennt die Umbenennung) und mit neuem toten Link.
+TABNAME="$(printf 'tab\tname.md')"
+git checkout -q -B s17basis "$BASIS"
+{ altlast tab; for i in $(seq 1 30); do echo "Zeile $i, damit git die Umbenennung erkennt."; done; } > "$TABNAME"
+git add -- "$TABNAME" && git commit -qm tabbasis
+TABBASIS=$(git rev-parse HEAD)
+git checkout -q -B s17 "$TABBASIS"
+git mv -- "$TABNAME" tab-neu.md && printf '\n[noch tot](auch-weg.md)\n' >> tab-neu.md && git commit -qam szenario
+pruefe "Tab-Name: git sieht eine Umbenennung" R "$(git diff --name-status -M "$TABBASIS" HEAD | cut -c1)"
+lauf links "$TABBASIS"; pruefe "Tab-Name umbenannt: Links rc 2, nicht grün" 2 "$RC"
+pruefe "Tab-Name: gemeldet" 1 "$(hat 'NICHT GEPRÜFT (Zeilenumbruch oder Tab im Namen)')"
+
+# 18) Neue Datei mit ungültigem UTF-8 und totem Link: lychee überspringt sie nur mit Warnung.
+kaputt() { printf '# K\n\n\xff\xfe [tot](weg.md)\n' > kaputt.md; }
+szenario s18 kaputt
+lauf links "$BASIS"; pruefe "Ungültiges UTF-8: Links rc 2, nicht grün" 2 "$RC"
 
 # 16) Werkzeug, dessen Exit-Code nicht zur Zahl passt: NICHT GEPRÜFT statt der Zahl glauben.
 cat > "$WEG/lychee-widerspruch" <<'EOF'

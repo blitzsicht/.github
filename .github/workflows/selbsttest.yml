@@ -115,9 +115,9 @@ jobs:
             if [ "$rc" -eq 1 ]; then echo "OK: $1 wird erkannt"
             else echo "::error::$1 blieb unerkannt (rc=$rc)"; cat "$2/out"; exit 1; fi
           }
-          sabotiere() {  # sabotiere <name> <alt> <neu>: Kopie mit genau einer Ersetzung, dann rot
+          sabotiere() {  # sabotiere <name> <alt> <neu> [skript]: Kopie mit genau einer Ersetzung, dann rot
             local d; d=$(mktemp -d); cp standard/*.sh "$d/"
-            python3 - "$d/basis-vergleich.sh" "$2" "$3" <<'PY'
+            python3 - "$d/${4:-basis-vergleich.sh}" "$2" "$3" <<'PY'
           import sys; p, a, b = sys.argv[1:]; s = open(p).read()
           if s.count(a) != 1: sys.exit("Sabotage nicht angebracht: " + a)
           open(p, 'w').write(s.replace(a, b))
@@ -145,11 +145,15 @@ jobs:
           sabotiere "Abbruch von git diff ignoriert" \
             '|| { echo "NICHT GEPRÜFT: git diff gegen $BASIS gescheitert"; exit 2; }' '|| true'
           # shellcheck disable=SC2016
-          sabotiere "Symlinks gelesen" 'if [ -L "$WURZEL/$pfad" ]; then' 'if false; then'
+          sabotiere "Symlinks gelesen" '[ -L "$WURZEL/$pfad" ] || return 1' 'return 1'
           # shellcheck disable=SC2016
           sabotiere "Typänderung ignoriert" 'T*)   [[ "$a" == *.md ]] && streng+=("$a") ;;' 'T*) : ;;'
           # shellcheck disable=SC2016
           sabotiere "Zeilenumbruch still übersprungen" 'UNGEPRUEFT=$((UNGEPRUEFT + 1)); continue 2' 'continue 2'
+          sabotiere "Tab im Namen nicht abgefangen" "*\$'\\n'*|*\$'\\t'*)" "*\$'\\n'*)"
+          sabotiere "Warnungen von lychee ignoriert" "if grep -qE '^[[:space:]]*\\[WARN\\]' \"\$out\"; then" 'if false; then'
+          # shellcheck disable=SC2016
+          sabotiere "Tor ohne Typänderung" '--diff-filter=ACMRT "$BASIS"' '--diff-filter=ACMR "$BASIS"' md-dateien.sh
 
   # Download je Architektur: Programm läuft, falsche Prüfsumme bricht ab und hinterlässt nichts.
   werkzeuge-test:

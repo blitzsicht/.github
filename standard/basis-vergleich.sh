@@ -17,13 +17,19 @@
 # damit relative Links gegen den damaligen Stand aufgelöst werden.
 #
 # Dateinamen kommen aus `git diff -z` und gehen nur zeilenweise in Listen, nie in eine
-# Shell-Zeile (siehe md-dateien.sh). Namen mit Zeilenumbruch lassen sich so nicht prüfen:
-# sie werden gemeldet, und der Lauf endet mit NICHT GEPRÜFT.
+# Shell-Zeile (siehe md-dateien.sh). Namen mit Zeilenumbruch oder Tab lassen sich so nicht
+# prüfen: sie werden gemeldet, und der Lauf endet mit NICHT GEPRÜFT.
 #
 # Exit 0: nichts verschlechtert · 1: mindestens ein FEHLER · 2: NICHT GEPRÜFT (Werkzeug fehlt
-# oder brach ab, git diff scheiterte, ein Name mit Zeilenumbruch ließ sich nicht prüfen).
+# oder brach ab oder übersprang Eingaben, git diff scheiterte, ein Name mit Zeilenumbruch oder
+# Tab ließ sich nicht prüfen, bash älter als 4.3).
 # Symlinks und Typänderungen gelten als FEHLER bzw. als neue Datei.
 set -uo pipefail
+
+# Ab bash 4.3 getestet; macOS bringt 3.2 mit. Lieber NICHT GEPRÜFT als still andere Semantik.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 3 ]; }; then
+  echo "NICHT GEPRÜFT: bash ${BASH_VERSION} ist zu alt (mindestens 4.3)."; exit 2
+fi
 
 HIER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODUS="${1:?Modus fehlt (lint oder links)}"
@@ -61,6 +67,12 @@ lauf() {
     # Fehlern können weitere Zähler folgen („👻 9 Excluded“).
     n=$(sed -nE 's/^🔍 [0-9]+ Total .* 🚫 ([0-9]+) Errors?( .*)?$/\1/p' "$out" | tail -n 1)
     ohne=0; mit=2
+    # lychee überspringt manche Eingaben nur mit Warnung (ungültiges UTF-8, nicht gefunden) und
+    # zählt sie dann nicht: „0 Errors“ hieße hier nur „nicht gelesen“.
+    if grep -qE '^[[:space:]]*\[WARN\]' "$out"; then
+      { echo "lychee hat Eingaben übersprungen:"; cat "$out"; } >&2
+      return 2
+    fi
   fi
   if [ -n "$n" ] && { { [ "$rc" -eq "$ohne" ] && [ "$n" -eq 0 ]; } || { [ "$rc" -eq "$mit" ] && [ "$n" -gt 0 ]; }; }; then
     echo "$n"
@@ -99,9 +111,10 @@ else
     IFS= read -r -d '' a || break
     b=""
     case "$status" in R*|C*) IFS= read -r -d '' b || break ;; esac
+    # Zeilenumbruch passt in keine Zeilenliste, Tab nicht in die Paare „alt<TAB>neu“.
     for n in "$a" "$b"; do
-      case "$n" in *$'\n'*)
-        printf 'NICHT GEPRÜFT (Zeilenumbruch im Namen): %q\n' "$n"; UNGEPRUEFT=$((UNGEPRUEFT + 1)); continue 2 ;;
+      case "$n" in *$'\n'*|*$'\t'*)
+        printf 'NICHT GEPRÜFT (Zeilenumbruch oder Tab im Namen): %q\n' "$n"; UNGEPRUEFT=$((UNGEPRUEFT + 1)); continue 2 ;;
       esac
     done
     case "$status" in
@@ -118,18 +131,17 @@ fi
 
 # Symlinks nie lesen: cp und lychee folgten ihnen zu beliebigen Dateien des Runners, deren
 # Inhalt dann in Befundzeilen im Log stünde. Eine verlinkte .md ist deshalb selbst ein FEHLER.
-ohne_links() {  # ohne_links <array-name>: entfernt Symlinks aus der Liste, meldet sie
-  local -n liste="$1"
-  local behalten=() eintrag pfad
-  for eintrag in ${liste[@]+"${liste[@]}"}; do
-    pfad="${eintrag#*$'\t'}"
-    if [ -L "$WURZEL/$pfad" ]; then echo "FEHLER  $pfad: Symlink, wird nicht gelesen"; FEHLER=$((FEHLER + 1))
-    else behalten+=("$eintrag"); fi
-  done
-  liste=(${behalten[@]+"${behalten[@]}"})
+ist_link() {  # ist_link <eintrag>: meldet einen Symlink auf der HEAD-Seite als FEHLER
+  local pfad="${1#*$'\t'}"
+  [ -L "$WURZEL/$pfad" ] || return 1
+  echo "FEHLER  $pfad: Symlink, wird nicht gelesen"; FEHLER=$((FEHLER + 1))
 }
-ohne_links streng
-ohne_links paare
+behalten=()
+for eintrag in ${streng[@]+"${streng[@]}"}; do ist_link "$eintrag" || behalten+=("$eintrag"); done
+streng=(${behalten[@]+"${behalten[@]}"})
+behalten=()
+for eintrag in ${paare[@]+"${paare[@]}"}; do ist_link "$eintrag" || behalten+=("$eintrag"); done
+paare=(${behalten[@]+"${behalten[@]}"})
 
 if [ "${#streng[@]}" -eq 0 ] && [ "${#paare[@]}" -eq 0 ]; then
   [ "$FEHLER" -gt 0 ] && exit 1
