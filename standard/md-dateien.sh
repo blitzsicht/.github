@@ -3,8 +3,8 @@
 #
 #   md-dateien.sh BASIS PFAD    # BASIS leer: alle getrackten Dateien unter PFAD
 #
-# Für den reusable Workflow: alle drei Markdown-Jobs lesen ihre Liste hier, statt sie je
-# Job neu zusammenzubauen.
+# Für den reusable Workflow: das Tor (aenderungen.sh) und der Ratchet (basis-vergleich.sh) lesen
+# ihre Liste hier, statt sie je Schritt neu zusammenzubauen.
 #
 # Zwei Fallen, gegen die das Skript steht:
 # - git setzt Namen mit Umlaut in der Zeilenausgabe in Anführungszeichen ("\303\244.md").

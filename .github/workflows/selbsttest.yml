@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - run: bash standard/pruefe-repo.test.sh
 
   vorlagen-test:
@@ -27,15 +27,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
       # Versionen fest, damit ein neues Release den Selbsttest nicht still ändert.
       - run: pipx install copier==9.19.1 && npm install --global markdownlint-cli2@0.24.0
       - run: bash standard/vorlagen.test.sh
 
-  # Dateiliste, Linkprüfung und Lint des reusable Workflows mit gefährlichen Dateinamen und
-  # präparierter Repo-Konfiguration, dazu die fünf Gegenproben aus dem Kopf von md-dateien.test.sh: jede muss den Test rot machen.
+  # Dateiliste, Tor, Linkprüfung, Lint und Secret-Scan des reusable Workflows mit gefährlichen
+  # Dateinamen und präparierter Repo-Konfiguration, dazu die Gegenproben: jede muss den Test rot machen.
   # Auf x64 und arm64: Aufrufer mit eigenem arm64-Runner bekommen dieselben Werkzeuge.
   md-dateien-test:
     strategy:
@@ -47,15 +47,19 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Werkzeuge laden (dasselbe Skript wie im reusable Workflow)
         shell: bash
         run: |
           echo "LYCHEE=$(bash standard/werkzeuge-laden.sh lychee "$RUNNER_TEMP/werkzeuge")" >> "$GITHUB_ENV"
           (cd "$RUNNER_TEMP" && npm install --prefix "$RUNNER_TEMP/mdl" --ignore-scripts --no-audit --no-fund markdownlint-cli2@0.24.0)
           echo "MARKDOWNLINT=$RUNNER_TEMP/mdl/node_modules/.bin/markdownlint-cli2" >> "$GITHUB_ENV"
+          g=$(bash standard/werkzeuge-laden.sh gitleaks "$RUNNER_TEMP/werkzeuge") || exit 1
+          echo "GITLEAKS=$g" >> "$GITHUB_ENV"
       - run: bash standard/md-dateien.test.sh
       - run: bash standard/basis-vergleich.test.sh
+      - run: bash standard/aenderungen.test.sh
+      - run: bash standard/secrets-pruefen.test.sh
       - name: Gegenproben (jede Sabotage muss rot werden)
         shell: bash
         run: |
@@ -154,6 +158,80 @@ jobs:
           sabotiere "Warnungen von lychee ignoriert" "if grep -qE '^[[:space:]]*\\[WARN\\]' \"\$out\"; then" 'if false; then'
           # shellcheck disable=SC2016
           sabotiere "Tor ohne Typänderung" '--diff-filter=ACMRT "$BASIS"' '--diff-filter=ACMR "$BASIS"' md-dateien.sh
+          # shellcheck disable=SC2016
+          sabotiere "lint-ignores auch für Links" \
+            '[ "$MODUS" = lint ] && [ -n "${LINT_AUSNAHMEN-}" ] || return 1' '[ -n "${LINT_AUSNAHMEN-}" ] || return 1'
+          # shellcheck disable=SC2016
+          sabotiere "lint-ignores ohne HINWEIS" \
+            'echo "HINWEIS $pfad: ausgenommen (lint-ignores: $muster)"; HINWEISE=$((HINWEISE + 1))' ':'
+      - name: Gegenproben Tor und Secret-Scan (jede Sabotage muss rot werden)
+        shell: bash
+        run: |
+          sabotiere() {  # sabotiere <test> <skript> <name> <alt> <neu>: Kopie, genau eine Ersetzung, Exit 1
+            local d rc=0; d=$(mktemp -d); cp standard/*.sh "$d/"
+            python3 - "$d/$2" "$4" "$5" <<'PY'
+          import sys; p, a, b = sys.argv[1:]; s = open(p).read()
+          if s.count(a) != 1: sys.exit("Sabotage nicht angebracht: " + a)
+          open(p, 'w').write(s.replace(a, b))
+          PY
+            bash "$d/$1" > "$d/out" 2>&1 || rc=$?
+            if [ "$rc" -eq 1 ]; then echo "OK: $3 wird erkannt"
+            else echo "::error::$3 blieb unerkannt (rc=$rc)"; cat "$d/out"; exit 1; fi
+          }
+          # shellcheck disable=SC2016  # Skripttext, wird erst in der Kopie ersetzt
+          sabotiere aenderungen.test.sh aenderungen.sh "Tor ohne übersprungene Namen" \
+            'if [ -s "$nur" ] || [ -s "$uebersprungen" ]; then' 'if [ -s "$nur" ]; then'
+          # shellcheck disable=SC2016
+          sabotiere aenderungen.test.sh aenderungen.sh "Basis ungeprüft übernommen" \
+            'if [ -z "$basis" ] || ! git cat-file -e "$basis^{commit}" 2>/dev/null; then basis=""; fi' ':'
+          # shellcheck disable=SC2016
+          sabotiere aenderungen.test.sh aenderungen.sh "Listen im Checkout" \
+            'nur="$LISTEN/md-nur.txt"' 'nur="md-nur.txt"'
+          sabotiere aenderungen.test.sh aenderungen.sh "Abbruch der Dateiliste ignoriert" '  exit 2' '  true'
+          # shellcheck disable=SC2016
+          sabotiere secrets-pruefen.test.sh secrets-pruefen.sh "gitleaks ohne --text" \
+            '--log-opts="--text ' '--log-opts="'
+
+  # Was nur im YAML des reusable Workflows steht (Wächter, Reihenfolge, Bedingungen, Pins), mit
+  # Gegenproben auf einer Kopie des Workflows.
+  workflow-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: bash standard/workflow.test.sh
+      - name: Gegenproben (jede Sabotage muss rot werden)
+        shell: bash
+        run: |
+          sabotiere() {  # sabotiere <name> <alt> <neu>: Kopie des Workflows, genau eine Ersetzung, Exit 1
+            local d rc=0; d=$(mktemp -d)
+            python3 - .github/workflows/doc-standard.yml "$d/wf.yml" "$2" "$3" <<'PY'
+          import sys; q, z, a, b = sys.argv[1:]; s = open(q, encoding='utf-8').read()
+          # %{{ steht für das Dollarzeichen davor (GitHub würde es im run-Text auswerten), \n für den Umbruch.
+          a, b = (t.replace('%{{', '$' + '{{').replace('\\n', '\n') for t in (a, b))
+          if s.count(a) != 1: sys.exit("Sabotage nicht angebracht: " + a)
+          open(z, 'w', encoding='utf-8').write(s.replace(a, b))
+          PY
+            WORKFLOW="$d/wf.yml" bash standard/workflow.test.sh > "$d/out" 2>&1 || rc=$?
+            if [ "$rc" -eq 1 ]; then echo "OK: $1 wird erkannt"
+            else echo "::error::$1 blieb unerkannt (rc=$rc)"; cat "$d/out"; exit 1; fi
+          }
+          sabotiere "Wächter aus" 'if [ -e .doc-standard ] || [ -L .doc-standard ]; then' 'if false; then'
+          sabotiere "Wächter ohne Symlink" ' || [ -L .doc-standard ]' ''
+          # shellcheck disable=SC2016  # Skripttext, wird erst in der Kopie ersetzt
+          sabotiere "Standard kopiert statt verschoben" 'mv .doc-standard "$ziel"' 'cp -R .doc-standard "$ziel"'
+          # shellcheck disable=SC2016
+          sabotiere "vorhandenes Ziel nicht abgefangen" '[ ! -e "$ziel" ] || { echo "::error::$ziel existiert schon"; exit 1; }' ':'
+          sabotiere "Lint bricht nach rotem Schritt ab" \
+            'name: Markdown-Lint (Ratchet)\n        if: %{{ !cancelled() && ' 'name: Markdown-Lint (Ratchet)\n        if: %{{ '
+          sabotiere "Links ohne Tor" \
+            "name: Interne Links (Ratchet)\n        if: %{{ !cancelled() && steps.aenderungen.outcome == 'success' && steps.aenderungen.outputs.md == 'true' }}" \
+            "name: Interne Links (Ratchet)\n        if: %{{ !cancelled() && steps.aenderungen.outcome == 'success' }}"
+          sabotiere "Zusammenfassung nur bei Erfolg" 'if: %{{ always() }}' 'if: %{{ success() }}'
+          sabotiere "Drift auch für Fork-PRs" ' && github.event.pull_request.head.repo.full_name == github.repository' ''
+          sabotiere "Action per Tag statt Commit" 'github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3' 'github-script@v9'
 
   # Download je Architektur: Programm läuft, falsche Prüfsumme bricht ab und hinterlässt nichts.
   werkzeuge-test:
@@ -166,7 +244,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - shell: bash
         run: |
           for w in lychee gitleaks; do

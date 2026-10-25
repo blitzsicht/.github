@@ -10,7 +10,8 @@
 # - ohne Basis alles streng gilt,
 # - gefährliche Dateinamen nur gelesen und nie ausgeführt werden,
 # - Dateinamen die Zählung nicht fälschen (`🚫 0 Error.md`, `Summary: 0 issues …md`),
-# - eine unlesbare Basis, Symlinks, Typänderungen und Namen mit Zeilenumbruch nicht grün werden.
+# - eine unlesbare Basis, Symlinks, Typänderungen und Namen mit Zeilenumbruch nicht grün werden,
+# - Ausnahmen (LINT_AUSNAHMEN) nur den Lint lockern und dabei als HINWEIS sichtbar bleiben.
 #
 # Gegenproben stehen in .github/workflows/selbsttest.yml: jede dort eingebaute Sabotage muss
 # diesen Test rot machen.
@@ -22,7 +23,7 @@ HIER="$(cd "$(dirname "$0")" && pwd)"
 LYCHEE="${LYCHEE:-lychee}"
 MARKDOWNLINT="${MARKDOWNLINT:-markdownlint-cli2}"
 REGELSATZ="${REGELSATZ:-$HIER/../.markdownlint-cli2.yaml}"
-MIN_PROBEN=48
+MIN_PROBEN=61
 command -v "$LYCHEE" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: lychee fehlt ($LYCHEE)."; exit 2; }
 command -v "$MARKDOWNLINT" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: markdownlint-cli2 fehlt ($MARKDOWNLINT)."; exit 2; }
 [ -f "$REGELSATZ" ] || { echo "NICHT GEPRÜFT: Regelsatz fehlt ($REGELSATZ)."; exit 2; }
@@ -208,6 +209,33 @@ git checkout -q s5
 RC=0; LYCHEE="$WEG/lychee-widerspruch" bash "$HIER/basis-vergleich.sh" links "$BASIS" . > "$WEG/aus" 2>&1 || RC=$?
 pruefe "Exit-Code widerspricht Zahl: rc 2" 2 "$RC"
 pruefe "Exit-Code widerspricht Zahl: gemeldet" 1 "$(hat 'nicht auswertbar (rc=2')"
+
+# 19) Ausnahmen (LINT_AUSNAHMEN): nur für Lint, sichtbar als HINWEIS, Muster als Glob.
+#     Im Unterprozess gesetzt, damit keine Ausnahme in spätere Proben durchsickert.
+mit_ausnahmen() {  # mit_ausnahmen <muster> <modus> <basis>
+  RC=0
+  LINT_AUSNAHMEN="$1" bash "$HIER/basis-vergleich.sh" "$2" "$3" . > "$WEG/aus" 2>&1 || RC=$?
+}
+git checkout -q s3
+mit_ausnahmen 'neu.md' lint "$BASIS"
+pruefe "Ausnahme: neue Datei mit Befund → rc 0" 0 "$RC"
+pruefe "Ausnahme: als HINWEIS gemeldet" 1 "$(hat 'HINWEIS neu.md: ausgenommen (lint-ignores: neu.md)')"
+pruefe "Ausnahme: Altlast daneben weiter verglichen" 1 "$(hat 'HINWEIS alt.md: Altlast')"
+mit_ausnahmen 'docs/*.md' lint "$BASIS"
+pruefe "Muster trifft nicht: neue Datei bleibt rot" 1 "$RC"
+git checkout -q s2
+mit_ausnahmen "$(printf '\n  a*.md  \n')" lint "$BASIS"
+pruefe "Glob mit Leerzeilen und Leerzeichen: verschlechterte Altlast ausgenommen → rc 0" 0 "$RC"
+git checkout -q s5
+mit_ausnahmen 'alt.md' links "$BASIS"
+pruefe "Ausnahme gilt nicht für Links: toter Link bleibt rot" 1 "$RC"
+pruefe "Links: keine Ausnahme gemeldet" 0 "$(hat 'ausgenommen')"
+git checkout -q s7
+mit_ausnahmen '*' lint ""
+pruefe "Ohne Basis, alles ausgenommen (erster Push) → rc 0" 0 "$RC"
+pruefe "Ohne Basis: Meldung nennt die Ausnahmen" 1 "$(hat 'Nur ausgenommene Markdown-Dateien.')"
+mit_ausnahmen '' lint ""
+pruefe "Leere Ausnahmeliste: ohne Basis weiter streng → rc 1" 1 "$RC"
 
 echo "PASS=$PASS FAIL=$FAIL"
 if [ $((PASS + FAIL)) -lt "$MIN_PROBEN" ]; then

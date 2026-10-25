@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # basis-vergleich.sh — Lint oder Linkprüfung der geänderten Markdown-Dateien mit Ratchet.
 #
-#   basis-vergleich.sh lint  BASIS PFAD    # REGELSATZ=…, MARKDOWNLINT=… wie markdown-lint.sh
+#   basis-vergleich.sh lint  BASIS PFAD    # REGELSATZ=…, MARKDOWNLINT=… wie markdown-lint.sh,
+#                                           # optional LINT_AUSNAHMEN (ein Glob je Zeile)
 #   basis-vergleich.sh links BASIS PFAD    # LYCHEE=… wie links-pruefen.sh
 #
 # Ein Repo mit Altlasten soll den Standard einführen können, ohne vorher jede alte Datei zu
@@ -136,17 +137,37 @@ ist_link() {  # ist_link <eintrag>: meldet einen Symlink auf der HEAD-Seite als 
   [ -L "$WURZEL/$pfad" ] || return 1
   echo "FEHLER  $pfad: Symlink, wird nicht gelesen"; FEHLER=$((FEHLER + 1))
 }
+# Ausnahmen (LINT_AUSNAHMEN, ein Glob je Zeile): Dateien, die nicht umformatiert werden dürfen,
+# etwa weil ihr Hash Teil eines Schlüssels ist. Nur für Lint, die Linkprüfung sieht sie weiter.
+# Jede Ausnahme steht als HINWEIS im Log, damit die Lockerung sichtbar bleibt. `*` trifft wie
+# in bash auch `/`: `prompts/*.md` nimmt Unterordner mit.
+ausgenommen() {  # ausgenommen <eintrag>: Name auf der HEAD-Seite passt auf ein Muster
+  local pfad="${1#*$'\t'}" muster
+  [ "$MODUS" = lint ] && [ -n "${LINT_AUSNAHMEN-}" ] || return 1
+  while IFS= read -r muster; do
+    muster="${muster#"${muster%%[![:space:]]*}"}"
+    muster="${muster%"${muster##*[![:space:]]}"}"
+    [ -n "$muster" ] || continue
+    # shellcheck disable=SC2053  # unquotiert gewollt: das Muster ist ein Glob, kein Text
+    if [[ "$pfad" == $muster ]]; then
+      echo "HINWEIS $pfad: ausgenommen (lint-ignores: $muster)"; HINWEISE=$((HINWEISE + 1))
+      return 0
+    fi
+  done <<< "$LINT_AUSNAHMEN"
+  return 1
+}
 behalten=()
-for eintrag in ${streng[@]+"${streng[@]}"}; do ist_link "$eintrag" || behalten+=("$eintrag"); done
+for eintrag in ${streng[@]+"${streng[@]}"}; do ist_link "$eintrag" || ausgenommen "$eintrag" || behalten+=("$eintrag"); done
 streng=(${behalten[@]+"${behalten[@]}"})
 behalten=()
-for eintrag in ${paare[@]+"${paare[@]}"}; do ist_link "$eintrag" || behalten+=("$eintrag"); done
+for eintrag in ${paare[@]+"${paare[@]}"}; do ist_link "$eintrag" || ausgenommen "$eintrag" || behalten+=("$eintrag"); done
 paare=(${behalten[@]+"${behalten[@]}"})
 
 if [ "${#streng[@]}" -eq 0 ] && [ "${#paare[@]}" -eq 0 ]; then
   [ "$FEHLER" -gt 0 ] && exit 1
   [ "$UNGEPRUEFT" -gt 0 ] && exit 2
-  echo "Keine geänderten Markdown-Dateien."
+  if [ "$HINWEISE" -gt 0 ]; then echo "Nur ausgenommene Markdown-Dateien. FEHLER=0 HINWEIS=$HINWEISE NICHT_GEPRUEFT=0"
+  else echo "Keine geänderten Markdown-Dateien."; fi
   exit 0
 fi
 
