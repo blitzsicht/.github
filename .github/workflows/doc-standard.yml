@@ -11,19 +11,38 @@
 #   geprüft. Geänderte Dateien dürfen nicht mehr Befunde haben als an der Basis, damit ein Repo
 #   mit Altlasten den Standard einführen kann, ohne vorher alles zu bereinigen.
 #
-# Bewusste Grenzen von v1.1:
+# Seit v1.2:
+# - Alle Prüfungen laufen in EINEM Job `pruefen`. Auf eigenen Runnern dauerten die fünf Jobs
+#   zusammen ~80 s, warteten aber je 3–35 min auf einen freien Runner, und Lint, Links und
+#   Secrets reihten sich erst hinter dem Tor ein: zwei Wartezeiten hintereinander, fünf Plätze.
+#   Jeder Prüfschritt läuft auch nach einem roten Schritt (`!cancelled()`), damit ein Befund den
+#   nächsten nicht verdeckt. Statt einer roten Zeile je Prüfung steht eine Tabelle in der
+#   Zusammenfassung des Laufs.
+# - Der Standard liegt nach dem Checkout unter $RUNNER_TEMP, nicht im geprüften Baum: pruefe-repo.sh
+#   und gitleaks sahen ihn sonst als Teil des Repos.
+# - Tor und Secret-Scan stehen in Skripten mit eigenem Test (aenderungen.sh, secrets-pruefen.sh).
+# - `lint-ignores` nimmt Dateien vom Lint aus, die nicht umformatiert werden dürfen.
+#
+# Bewusste Grenzen:
 # - `runs-on` nimmt genau ein Label, keine Liste und keine Gruppe.
 # - Eigene Runner: Dieser Workflow liest Dateien aus dem PR. Für PRs aus Forks keinen Runner mit
 #   Zugang zu internen Netzen oder Zugangsdaten nehmen; Symlinks lehnt basis-vergleich.sh ab.
 # - Eine Umbenennung über die Grenze von `pfad` hinweg gilt als neue Datei (streng).
 # - Das geprüfte Repo darf die Prüfung sichtbar lockern: `.lycheeignore` (liest lychee),
-#   `<!-- markdownlint-disable -->` in einer Datei, Pfade unter den `ignores` des Regelsatzes.
-#   Die Prüfung schützt vor Versehen und vor Code aus dem PR, nicht vor einem Autor, der sie
-#   im Diff abschaltet. Dasselbe gilt für `.gitleaks.toml` und `.gitleaksignore`: gitleaks
-#   liest beide aus dem geprüften Repo, ein Eintrag dort kann einen Fund ausblenden.
+#   `<!-- markdownlint-disable -->` in einer Datei, Pfade unter den `ignores` des Regelsatzes,
+#   `lint-ignores` im Aufruf (jede Ausnahme steht als HINWEIS im Log). Die Prüfung schützt vor
+#   Versehen und vor Code aus dem PR, nicht vor einem Autor, der sie im Diff abschaltet.
+#   Dasselbe gilt für `.gitleaks.toml` und `.gitleaksignore`: gitleaks liest beide aus dem
+#   geprüften Repo, ein Eintrag dort kann einen Fund ausblenden.
 # - Geprüft werden nur geänderte Markdown-Dateien. Löscht oder verschiebt ein PR ein Linkziel,
 #   bricht der Link in einer unveränderten Datei, ohne dass dieser Lauf es meldet.
 # - markdownlint-cli2 ist auf die Version gepinnt, seine Abhängigkeiten nicht (kein Lockfile).
+# - Rechte: Der Aufrufer gibt `contents: read` und `pull-requests: write`. Letzteres braucht nur
+#   der Drift-Hinweis, ohne es startet der Aufruf aber gar nicht (startup_failure), auch wenn
+#   `drift-pfade` leer ist und der Job übersprungen würde.
+# - Kein Pfadfilter, auch nicht im Beispielaufruf: der Secret-Scan soll Code-PRs ebenso sehen,
+#   und ein Lauf belegt nur einen Runner-Platz.
+# - Der Drift-Hinweis läuft nur für PRs aus demselben Repo: bei Fork-PRs ist das Token nur lesend.
 name: doc-standard
 
 on:
@@ -49,6 +68,10 @@ on:
         description: "Ein Runner-Label für alle Jobs, z. B. ein eigener Runner. Linux mit bash, curl, git, npm; x64 oder arm64."
         type: string
         default: 'ubuntu-latest'
+      lint-ignores:
+        description: "Ein Glob je Zeile, relativ zur Repo-Wurzel: vom Markdown-Lint ausgenommen (Links werden weiter geprüft)."
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -63,110 +86,66 @@ env:
   STANDARD_REPO: blitzsicht/.github
 
 jobs:
-  aenderungen:
+  pruefen:
     runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: read
-    outputs:
-      md: ${{ steps.diff.outputs.md }}
-      basis: ${{ steps.diff.outputs.basis }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
       # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
-      # würde vom folgenden Checkout geleert und überschrieben.
+      # würde vom folgenden Checkout geleert und überschrieben. Inline, nicht als Skript: der
+      # Standard ist an dieser Stelle noch nicht da.
       - name: Kein .doc-standard im geprüften Repo
         shell: bash
         run: |
           if [ -e .doc-standard ] || [ -L .doc-standard ]; then
             echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
           fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: ${{ env.STANDARD_REPO }}
           ref: ${{ inputs.standard-ref }}
           path: .doc-standard
           persist-credentials: false
-      - id: diff
+      # checkout legt nur unterhalb des Workspace ab. Gleich danach raus aus dem geprüften Baum,
+      # bevor irgendetwas aus dem Repo gelesen wird.
+      - id: standard
+        name: Standard aus dem geprüften Baum nehmen
+        shell: bash
+        run: |
+          ziel="$RUNNER_TEMP/standard"
+          [ ! -e "$ziel" ] || { echo "::error::$ziel existiert schon"; exit 1; }
+          mv .doc-standard "$ziel"
+          echo "STANDARD=$ziel" >> "$GITHUB_ENV"
+      - id: aenderungen
+        name: Tor (geänderte Markdown-Dateien)
         shell: bash
         env:
           PR_BASIS: ${{ github.event.pull_request.base.sha }}
           VORHER: ${{ github.event.before }}
           PFAD: ${{ inputs.pfad }}
-        run: |
-          basis="${PR_BASIS:-$VORHER}"
-          # Neuer Branch (before = 000…) oder unbekannte Basis: alles gilt als geändert.
-          if [ -z "$basis" ] || ! git cat-file -e "$basis^{commit}" 2>/dev/null; then basis=""; fi
-          # Listen außerhalb des Checkouts: eine gleichnamige Datei aus dem PR (Symlink auf /dev/null
-          # oder nach außen) hätte sonst das Tor geschlossen bzw. eine fremde Datei überschrieben.
-          nur="$RUNNER_TEMP/md-nur.txt"; uebersprungen="$RUNNER_TEMP/md-uebersprungen.txt"
-          bash .doc-standard/standard/md-dateien.sh "$basis" "$PFAD" > "$nur" 2> "$uebersprungen"
-          cat "$uebersprungen" >&2
-          echo "basis=$basis" >> "$GITHUB_OUTPUT"
-          # Auch übersprungene Namen öffnen das Tor: die Prüfjobs melden sie dann als NICHT GEPRÜFT.
-          if [ -s "$nur" ] || [ -s "$uebersprungen" ]; then echo "md=true" >> "$GITHUB_OUTPUT"; else echo "md=false" >> "$GITHUB_OUTPUT"; fi
-          echo "Geänderte Markdown-Dateien: $(wc -l < "$nur")"
-
-  pruefe-repo:
-    runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
-      # würde vom folgenden Checkout geleert und überschrieben.
-      - name: Kein .doc-standard im geprüften Repo
+        run: bash "$STANDARD/standard/aenderungen.sh" "${PR_BASIS:-$VORHER}" "$PFAD" "$RUNNER_TEMP" >> "$GITHUB_OUTPUT"
+      - id: repo
+        name: Struktur (pruefe-repo.sh)
+        if: ${{ !cancelled() && steps.standard.outcome == 'success' }}
         shell: bash
-        run: |
-          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
-            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
-          fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          repository: ${{ env.STANDARD_REPO }}
-          ref: ${{ inputs.standard-ref }}
-          path: .doc-standard
-          persist-credentials: false
-      - shell: bash
         env:
           PROFIL: ${{ inputs.profil }}
           PFAD: ${{ inputs.pfad }}
-        run: bash .doc-standard/standard/pruefe-repo.sh ${PROFIL:+--profil "$PROFIL"} "$PFAD"
-
-  markdownlint:
-    needs: aenderungen
-    if: needs.aenderungen.outputs.md == 'true'
-    runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          fetch-depth: 0
-      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
-      # würde vom folgenden Checkout geleert und überschrieben.
-      - name: Kein .doc-standard im geprüften Repo
-        shell: bash
-        run: |
-          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
-            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
-          fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          repository: ${{ env.STANDARD_REPO }}
-          ref: ${{ inputs.standard-ref }}
-          path: .doc-standard
-          persist-credentials: false
+        run: bash "$STANDARD/standard/pruefe-repo.sh" ${PROFIL:+--profil "$PROFIL"} "$PFAD"
       # markdownlint-cli2 als CLI statt der Action, gelintet in einer Kopie (markdown-lint.sh):
       # im Repo lädt es `.markdownlint*.cjs/.mjs` des geprüften Repos per require/import.
-      - shell: bash
+      - id: lint
+        name: Markdown-Lint (Ratchet)
+        if: ${{ !cancelled() && steps.aenderungen.outcome == 'success' && steps.aenderungen.outputs.md == 'true' }}
+        shell: bash
         env:
-          BASIS: ${{ needs.aenderungen.outputs.basis }}
+          BASIS: ${{ steps.aenderungen.outputs.basis }}
           PFAD: ${{ inputs.pfad }}
+          LINT_AUSNAHMEN: ${{ inputs.lint-ignores }}
         run: |
           command -v npm >/dev/null || { echo "::error::npm fehlt auf dem Runner"; exit 1; }
           # Außerhalb des Repos installieren: npm läse sonst eine `.npmrc` des geprüften Repos
@@ -174,88 +153,71 @@ jobs:
           # auf einem eigenen Runner fehlt dem Job-Nutzer dafür meist das Schreibrecht.
           (cd "$RUNNER_TEMP" && npm install --prefix "$RUNNER_TEMP/mdl" --ignore-scripts --no-audit --no-fund markdownlint-cli2@0.24.0)
           export MARKDOWNLINT="$RUNNER_TEMP/mdl/node_modules/.bin/markdownlint-cli2"
-          export REGELSATZ="$PWD/.doc-standard/.markdownlint-cli2.yaml"
-          bash .doc-standard/standard/basis-vergleich.sh lint "$BASIS" "$PFAD"
-
-  links:
-    needs: aenderungen
-    if: needs.aenderungen.outputs.md == 'true'
-    runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          fetch-depth: 0
-      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
-      # würde vom folgenden Checkout geleert und überschrieben.
-      - name: Kein .doc-standard im geprüften Repo
-        shell: bash
-        run: |
-          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
-            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
-          fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          repository: ${{ env.STANDARD_REPO }}
-          ref: ${{ inputs.standard-ref }}
-          path: .doc-standard
-          persist-credentials: false
+          export REGELSATZ="$STANDARD/.markdownlint-cli2.yaml"
+          bash "$STANDARD/standard/basis-vergleich.sh" lint "$BASIS" "$PFAD"
       # lychee als CLI mit Prüfsumme statt der lychee-Action: die Action setzt ihre Argumente
       # per eval in eine Shell-Zeile, ein Dateiname wie `x$(befehl).md` lief dort als Befehl.
-      - shell: bash
+      - id: links
+        name: Interne Links (Ratchet)
+        if: ${{ !cancelled() && steps.aenderungen.outcome == 'success' && steps.aenderungen.outputs.md == 'true' }}
+        shell: bash
         env:
-          BASIS: ${{ needs.aenderungen.outputs.basis }}
+          BASIS: ${{ steps.aenderungen.outputs.basis }}
           PFAD: ${{ inputs.pfad }}
         run: |
-          LYCHEE=$(bash .doc-standard/standard/werkzeuge-laden.sh lychee "$RUNNER_TEMP/werkzeuge")
+          LYCHEE=$(bash "$STANDARD/standard/werkzeuge-laden.sh" lychee "$RUNNER_TEMP/werkzeuge")
           export LYCHEE
-          bash .doc-standard/standard/basis-vergleich.sh links "$BASIS" "$PFAD"
-
-  secrets:
-    needs: aenderungen
-    runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          fetch-depth: 0
-      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
-      # würde vom folgenden Checkout geleert und überschrieben.
-      - name: Kein .doc-standard im geprüften Repo
-        shell: bash
-        run: |
-          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
-            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
-          fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          repository: ${{ env.STANDARD_REPO }}
-          ref: ${{ inputs.standard-ref }}
-          path: .doc-standard
-          persist-credentials: false
-      # gitleaks als CLI mit Prüfsumme: die gitleaks-Action verlangt für Organisationen eine Lizenz.
+          bash "$STANDARD/standard/basis-vergleich.sh" links "$BASIS" "$PFAD"
       # Geladen nach $RUNNER_TEMP, damit das Programm nicht selbst im gescannten Baum liegt.
-      - shell: bash
+      - id: secrets
+        name: Secrets im Diff (gitleaks)
+        if: ${{ !cancelled() && steps.aenderungen.outcome == 'success' }}
+        shell: bash
         env:
-          BASIS: ${{ needs.aenderungen.outputs.basis }}
+          BASIS: ${{ steps.aenderungen.outputs.basis }}
         run: |
-          GITLEAKS=$(bash .doc-standard/standard/werkzeuge-laden.sh gitleaks "$RUNNER_TEMP/werkzeuge")
-          # Der Standard-Checkout gehört nicht zum geprüften Repo; ohne Basis scannte `dir` ihn mit.
-          rm -rf .doc-standard
-          if [ -n "$BASIS" ]; then
-            # --text: sonst macht `* -diff` in der .gitattributes des Repos jeden Diff „binär“,
-            # gitleaks sieht ~0 Bytes und meldet „no leaks found“ (nachgestellt, mit --text: Fund).
-            "$GITLEAKS" git --no-banner --redact --log-opts="--text ${BASIS}..HEAD" .
-          else
-            "$GITLEAKS" dir --no-banner --redact .
-          fi
+          GITLEAKS=$(bash "$STANDARD/standard/werkzeuge-laden.sh" gitleaks "$RUNNER_TEMP/werkzeuge")
+          export GITLEAKS
+          bash "$STANDARD/standard/secrets-pruefen.sh" "$BASIS"
+      - name: Zusammenfassung
+        if: ${{ always() }}
+        shell: bash
+        env:
+          VORBEREITUNG: ${{ steps.standard.outcome }}
+          TOR: ${{ steps.aenderungen.outcome }}
+          MD: ${{ steps.aenderungen.outputs.md }}
+          REPO: ${{ steps.repo.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+          LINKS: ${{ steps.links.outcome }}
+          SECRETS: ${{ steps.secrets.outcome }}
+        run: |
+          wort() {
+            case "$1" in
+              success) echo "grün" ;; cancelled) echo "abgebrochen" ;;
+              # aenderungen.sh endet nur mit 0 oder 2: ein rotes Tor heißt „Dateiliste nicht lesbar“.
+              failure) if [ "$2" = tor ]; then echo "**nicht geprüft** (Dateiliste nicht lesbar)"; else echo "**rot**"; fi ;;
+              skipped) if [ "$2" = md ] && [ "$MD" = false ]; then echo "keine Markdown-Änderung"; else echo "nicht gelaufen"; fi ;;
+              *) echo "nicht gelaufen" ;;
+            esac
+          }
+          {
+            echo "### doc-standard"
+            echo
+            echo "| Prüfung | Ergebnis |"
+            echo "|---|---|"
+            echo "| Vorbereitung (Wächter, Standard) | $(wort "$VORBEREITUNG") |"
+            echo "| Tor (geänderte Markdown-Dateien) | $(wort "$TOR" tor) |"
+            echo "| Struktur (pruefe-repo.sh) | $(wort "$REPO") |"
+            echo "| Markdown-Lint | $(wort "$LINT" md) |"
+            echo "| Interne Links | $(wort "$LINKS" md) |"
+            echo "| Secrets im Diff | $(wort "$SECRETS") |"
+            echo
+            echo "Befunde stehen im Log des jeweiligen Schritts."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   drift-hinweis:
-    if: github.event_name == 'pull_request' && inputs.drift-pfade != ''
+    # Nur PRs aus demselben Repo: bei Fork-PRs ist das Token nur lesend, der Kommentar scheiterte.
+    if: github.event_name == 'pull_request' && inputs.drift-pfade != '' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 5
     continue-on-error: true
@@ -263,7 +225,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         env:
           DRIFT_PFADE: ${{ inputs.drift-pfade }}
         with:
