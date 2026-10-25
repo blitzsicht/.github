@@ -1,3 +1,8 @@
 # Changelog
 
-Wird aus den Commit-Präfixen (feat, fix, docs …) erzeugt, nicht von Hand gepflegt.
+Wird von Hand gepflegt, im Stil von [Keep a Changelog](https://keepachangelog.com/de/1.1.0/):
+neue Einträge oben unter „Unveröffentlicht“, je Version gegliedert nach Hinzugefügt, Geändert,
+Behoben und Entfernt. Sammelt das Repo Änderungen auf anderem Weg (etwa als Fragmente je
+Modul), steht hier stattdessen, wo sie liegen.
+
+## Unveröffentlicht

@@ -2,9 +2,15 @@
 
 ## Überblick
 
-```mermaid
-flowchart LR
-    eingabe[Eingabe] --> kern[{{ name }}] --> ausgabe[Ausgabe]
-```
+Hier fehlt noch das Diagramm. Profil L verlangt mindestens einen Mermaid-Block (Codeblock
+mit der Sprache `mermaid`); bis er da ist, meldet die Prüfung R-MERMAID. Die Vorlage liefert
+bewusst keins, denn ein Beispieldiagramm erfüllte die Regel, ohne etwas über dieses Repo zu
+sagen.
+
+Hierher gehören:
+
+- ein Kontextdiagramm: welche Systeme Daten liefern oder bekommen, wer Läufe auslöst;
+- ein Ablauf- oder Datenflussdiagramm für den wichtigsten Weg durch das System;
+- bei Bedarf ein Zustandsdiagramm für Objekte mit Lebenszyklus.
 
 Entscheidungen zur Architektur stehen in [decisions/](decisions/).

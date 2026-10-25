@@ -150,6 +150,20 @@ Fällt `gh` aus oder kommt keine Repo-Liste zurück, endet das Skript mit Exit 3
 `NICHT GEPRUEFT` — ausdrücklich nicht mit „sauber". Ein Prüfer, der bei Ausfall grün meldet,
 wäre schlimmer als keiner.
 
+## Doku-Standard
+
+Die Vorlage für `AGENTS.md`, `docs/` und den Prüf-Workflow liegt in diesem Repo
+(`copier.yml`, Ordner `vorlagen/`).
+
+- **`copier copy` immer gegen die GitHub-Quelle** (`copier copy gh:blitzsicht/.github <ziel>`),
+  nie gegen einen lokalen Checkout. copier schreibt die Quelle als `_src_path` in
+  `.copier-answers.yml`; ein lokaler Pfad landet so im Repo und lässt `copier update` auf
+  jedem anderen Rechner ins Leere laufen.
+- **Groß- und Kleinschreibung bei Dateinamen:** Auf Dateisystemen, die sie nicht
+  unterscheiden (macOS), sind `docs/betrieb.md` und `docs/BETRIEB.md` dieselbe Datei. Eine
+  Datei mit falscher Schreibweise per `git mv` umbenennen, ohne Platzhalter unter dem alten
+  Namen: der überschriebe auf solchen Systemen die neue Datei oder kollidierte beim Checkout.
+
 ## Commits
 
 - Commit-Nachrichten auf **Deutsch**, mit echten Umlauten.
