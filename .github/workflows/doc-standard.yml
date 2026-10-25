@@ -39,7 +39,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: doc-standard-${{ github.workflow }}-${{ github.ref }}
+  # runs-on im Namen: zwei Aufrufe aus demselben Lauf (z. B. Matrix) brachen sich sonst gegenseitig ab.
+  group: doc-standard-${{ github.workflow }}-${{ github.ref }}-${{ inputs.runs-on }}
   cancel-in-progress: true
 
 env:
