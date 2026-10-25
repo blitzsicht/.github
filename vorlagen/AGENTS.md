@@ -10,9 +10,8 @@ Betrieb: geplant
 
 {% if profil in 'ML' -%}
 1. [docs/INDEX.md](docs/INDEX.md): wo was steht.
-2. Offene Issues bzw. den Stand des Planungswerkzeugs. Liegt der Stand in einer nicht
-   getrackten Datei (nur im Haupt-Checkout), hier sagen, wo er zu finden ist: im
-   Haupt-Checkout oder per Statusbefehl, nicht als Repo-Pfad, der im Worktree fehlt.
+2. Offene Issues bzw. den Stand des Planungswerkzeugs. Nicht getrackter Stand liegt nur im
+   Haupt-Checkout: aus einem Worktree dort oder per Statusbefehl nachsehen.
 3. Die jüngsten Dateien in [docs/decisions/](docs/decisions/).
 4. Bei einer Fortsetzung die Übergabe des Strangs, den der Auftrag nennt, nicht die jüngste.
 {%- else -%}

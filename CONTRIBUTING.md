@@ -159,6 +159,10 @@ Die Vorlage für `AGENTS.md`, `docs/` und den Prüf-Workflow liegt in diesem Rep
   nie gegen einen lokalen Checkout. copier schreibt die Quelle als `_src_path` in
   `.copier-answers.yml`; ein lokaler Pfad landet so im Repo und lässt `copier update` auf
   jedem anderen Rechner ins Leere laufen.
+- **Profil L ist nach dem Anlegen rot**, bis `docs/ARCHITEKTUR.md` ein Mermaid-Diagramm hat
+  (R-MERMAID). Die Vorlage liefert bewusst keins; copier weist nach dem Kopieren darauf hin.
+- **Erstausstattung eines bestehenden Repos:** Eine vorhandene `.gitignore` bleibt stehen. Fehlt
+  dort die Regel für Umgebungsdateien, meldet die Prüfung R-ENV-IGNORE.
 - **Groß- und Kleinschreibung bei Dateinamen:** Auf Dateisystemen, die sie nicht
   unterscheiden (macOS), sind `docs/betrieb.md` und `docs/BETRIEB.md` dieselbe Datei. Eine
   Datei mit falscher Schreibweise per `git mv` umbenennen, ohne Platzhalter unter dem alten

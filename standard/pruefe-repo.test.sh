@@ -21,6 +21,7 @@ repo() {  # repo <Name> <Profil> → legt ein vollständiges, gültiges Repo an,
   printf '# beispiel-werkzeug\n' > "$d/README.md"
   printf '# beispiel-werkzeug\n\nProfil: %s\n' "$p" > "$d/AGENTS.md"
   printf '@AGENTS.md\n' > "$d/CLAUDE.md"
+  printf '.env*\n!.env.example\n' > "$d/.gitignore"
   if [ "$p" = M ] || [ "$p" = L ]; then
     git -C "$d" remote add origin https://example.invalid/beispiel.git
     mkdir -p "$d/docs/decisions"
@@ -105,6 +106,16 @@ d=$(repo arch L);       rm "$d/docs/ARCHITEKTUR.md";                erwarte_fehl
 d=$(repo mermaid L);    printf '# Architektur\n' > "$d/docs/ARCHITEKTUR.md"; erwarte_fehler R-MERMAID "$d"
 d=$(repo runbook L);    rm "$d/docs/RUNBOOK.md";                    erwarte_fehler R-RUNBOOK "$d"
 d=$(repo changelog L);  rm "$d/CHANGELOG.md";                       erwarte_fehler R-CHANGELOG "$d"
+d=$(repo ignore S);     rm "$d/.gitignore";                         erwarte_fehler R-ENV-IGNORE "$d"
+d=$(repo ignore-ein S); : > "$d/.env"; git -C "$d" add -f -- .env;  erwarte_fehler R-ENV-IGNORE "$d"
+d=$(repo ignore-git S); rm -rf "$d/.git";                           erwarte_fehler R-ENV-IGNORE "$d"
+# Eine globale Regel des Rechners zählt nicht: sie fehlt auf jedem anderen Rechner und im CI.
+d=$(repo ignore-gl S);  rm "$d/.gitignore"
+printf '.env*\n' > "$WURZEL/global-ignore"
+printf '[core]\n\texcludesFile = %s\n' "$WURZEL/global-ignore" > "$WURZEL/global-config"
+export GIT_CONFIG_GLOBAL="$WURZEL/global-config"
+erwarte_fehler R-ENV-IGNORE "$d"
+unset GIT_CONFIG_GLOBAL
 
 echo "Grenzen und Hinweise"
 erwarte_grenze R-AGENTS-GROESSE "$(repo grenze-s S)" AGENTS.md 60
@@ -123,7 +134,7 @@ FIXTURES="$(dirname "$(dirname "$PRUEFE")")/tests/fixtures"
 for p in S M L W; do erwarte_gruen "Fixture profil-$p" "$FIXTURES/profil-$p"; done
 
 echo "PASS=$PASS FAIL=$FAIL"
-# Untergrenze: 4 Profile + 20 Regelfälle + 8 Grenzfälle und Hinweise + 4 Fixtures. Fällt ein Block still aus,
+# Untergrenze: 4 Profile + 24 Regelfälle + 8 Grenzfälle und Hinweise + 4 Fixtures. Fällt ein Block still aus,
 # sinkt die Summe und der Test wird rot, statt mit weniger Fällen grün zu bleiben.
-[ "$((PASS + FAIL))" -ge 36 ] || { echo "FEHLER: nur $((PASS + FAIL)) Fälle gelaufen, erwartet 36"; exit 1; }
+[ "$((PASS + FAIL))" -ge 40 ] || { echo "FEHLER: nur $((PASS + FAIL)) Fälle gelaufen, erwartet 40"; exit 1; }
 [ "$FAIL" -eq 0 ]

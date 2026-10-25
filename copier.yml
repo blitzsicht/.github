@@ -6,6 +6,10 @@
 # copier update auf einem anderen Rechner und landete mit dem Repo im git.
 # Dateinamen mit {% if … %} entstehen nur für die Profile, die sie verlangen.
 _subdirectory: vorlagen
+# Profil L: die Vorlage liefert kein Diagramm, die Prüfung ist bis dahin rot (R-MERMAID).
+_message_after_copy: |
+  {% if profil == 'L' %}Profil L: docs/ARCHITEKTUR.md braucht noch ein Mermaid-Diagramm. Bis es da ist,
+  meldet pruefe-repo.sh FEHLER R-MERMAID und der Workflow doc-standard ist rot.{% endif %}
 _templates_suffix: ''
 _envops:
   keep_trailing_newline: true

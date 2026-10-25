@@ -25,8 +25,10 @@ erzeuge() {  # erzeuge <Ziel> <Profil> <ja|nein> [weitere Optionen für copier]
 }
 
 ignoriert() {  # ignoriert <Repo> <Pfad> → 0 ignoriert, 1 nicht ignoriert, 2 git check-ignore gescheitert
+  # Ohne globale Konfiguration: ein excludesFile des Rechners machte die Probe sonst grün,
+  # auch wenn die Vorlage gar keine Regel liefert.
   local rc=0
-  git -C "$1" check-ignore -q -- "$2" || rc=$?
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$1" check-ignore -q -- "$2" || rc=$?
   case "$rc" in 0) return 0 ;; 1) return 1 ;; *) return 2 ;; esac
 }
 
@@ -84,8 +86,14 @@ if erzeuge "$d" M nein --overwrite && [ "$(cat "$d/.gitignore")" = eigene-regel 
    && grep -qx 'Profil: M' "$d/AGENTS.md"
 then gut "vorhandene .gitignore bleibt, AGENTS.md wird erneuert"
 else schlecht "vorhandene .gitignore überschrieben oder copier schrieb nichts"; fi
+# Genau dieser Fall (Erstausstattung, eigene .gitignore ohne .env*) muss in der Prüfung auffallen,
+# sonst steht in AGENTS.md „.env* ist ignoriert“, ohne dass es stimmt.
+aus=$(bash "$HIER/pruefe-repo.sh" "$d")
+if grep -q '^FEHLER  R-ENV-IGNORE:' <<<"$aus"
+then gut "Erstausstattung ohne .env*-Regel meldet R-ENV-IGNORE"
+else schlecht "Erstausstattung ohne .env*-Regel fällt in pruefe-repo.sh nicht auf"; fi
 
 echo "PASS=$PASS FAIL=$FAIL"
-# Untergrenze: 8 Repos × 4 Proben + Diagramm-Gegenprobe + vorhandene .gitignore.
-[ "$((PASS + FAIL))" -ge 34 ] || { echo "FEHLER: nur $((PASS + FAIL)) Fälle gelaufen, erwartet 34"; exit 1; }
+# Untergrenze: 8 Repos × 4 Proben + Diagramm-Gegenprobe + vorhandene .gitignore (2 Proben).
+[ "$((PASS + FAIL))" -ge 35 ] || { echo "FEHLER: nur $((PASS + FAIL)) Fälle gelaufen, erwartet 35"; exit 1; }
 [ "$FAIL" -eq 0 ]

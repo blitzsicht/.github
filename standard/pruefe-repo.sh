@@ -51,6 +51,16 @@ if [ -f "$REPO/CLAUDE.md" ]; then
   else fehler "R-CLAUDE-IMPORT: erste Zeile von CLAUDE.md ist '$erste', erwartet '@AGENTS.md'"; fi
 fi
 
+# AGENTS.md sagt „.env* ist ignoriert“; bei der Erstausstattung bleibt eine vorhandene .gitignore
+# aber stehen. Globale und systemweite Regeln zählen nicht: sie gelten nur auf einem Rechner.
+rc=0
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$REPO" check-ignore -q -- .env 2>/dev/null || rc=$?
+case "$rc" in
+  0) ok "R-ENV-IGNORE: .env ist per .gitignore ausgeschlossen" ;;
+  1) fehler "R-ENV-IGNORE: .env wird nicht ignoriert ('.env*' fehlt in .gitignore, oder .env ist eingecheckt)" ;;
+  *) fehler "R-ENV-IGNORE: nicht prüfbar, $REPO ist kein git-Repo" ;;
+esac
+
 PROFIL="$PROFIL_VORGABE"
 if [ -z "$PROFIL" ] && [ -f "$REPO/AGENTS.md" ]; then
   PROFIL=$(grep -m1 -E '^Profil: [SMLW]$' "$REPO/AGENTS.md" | cut -d' ' -f2 || true)
