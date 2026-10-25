@@ -133,6 +133,23 @@ jobs:
           sabotiere "Verschlechterung nie rot" 'elif [ "$jetzt" -gt "$vorher" ]; then' 'elif false; then'
           # shellcheck disable=SC2016
           sabotiere "Umbenennung streng statt Vergleich" 'R*)   [[ "$b" == *.md ]] || continue' 'R*) streng+=("$b"); continue'
+          # shellcheck disable=SC2016
+          sabotiere "Zählung unverankert (Dateiname fälscht sie)" \
+            "n=\$(sed -nE 's/^🔍 [0-9]+ Total .* 🚫 ([0-9]+) Errors?( .*)?\$/\\1/p' \"\$out\" | tail -n 1)" \
+            "n=\$(sed -nE 's/.*🚫 ([0-9]+) Error.*/\\1/p' \"\$out\" | head -n 1)"
+          # shellcheck disable=SC2016
+          sabotiere "Exit-Code nicht abgeglichen" \
+            'if [ -n "$n" ] && { { [ "$rc" -eq "$ohne" ] && [ "$n" -eq 0 ]; } || { [ "$rc" -eq "$mit" ] && [ "$n" -gt 0 ]; }; }; then' \
+            'if [ -n "$n" ]; then'
+          # shellcheck disable=SC2016
+          sabotiere "Abbruch von git diff ignoriert" \
+            '|| { echo "NICHT GEPRÜFT: git diff gegen $BASIS gescheitert"; exit 2; }' '|| true'
+          # shellcheck disable=SC2016
+          sabotiere "Symlinks gelesen" 'if [ -L "$WURZEL/$pfad" ]; then' 'if false; then'
+          # shellcheck disable=SC2016
+          sabotiere "Typänderung ignoriert" 'T*)   [[ "$a" == *.md ]] && streng+=("$a") ;;' 'T*) : ;;'
+          # shellcheck disable=SC2016
+          sabotiere "Zeilenumbruch still übersprungen" 'UNGEPRUEFT=$((UNGEPRUEFT + 1)); continue 2' 'continue 2'
 
   # Download je Architektur: Programm läuft, falsche Prüfsumme bricht ab und hinterlässt nichts.
   werkzeuge-test:

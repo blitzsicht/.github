@@ -8,10 +8,12 @@
 # - eine neue Datei mit Befund rot wird, auch neben einer harmlosen Altlast,
 # - eine umbenannte Altlast gegen ihren alten Pfad gezählt wird,
 # - ohne Basis alles streng gilt,
-# - gefährliche Dateinamen nur gelesen und nie ausgeführt werden.
+# - gefährliche Dateinamen nur gelesen und nie ausgeführt werden,
+# - Dateinamen die Zählung nicht fälschen (`🚫 0 Error.md`, `Summary: 0 issues …md`),
+# - eine unlesbare Basis, Symlinks, Typänderungen und Namen mit Zeilenumbruch nicht grün werden.
 #
-# Gegenproben stehen in .github/workflows/selbsttest.yml: „Basis immer 0“ und „neue Dateien
-# übersprungen“ müssen diesen Test rot machen.
+# Gegenproben stehen in .github/workflows/selbsttest.yml: jede dort eingebaute Sabotage muss
+# diesen Test rot machen.
 #
 # Ohne lychee oder markdownlint-cli2: Exit 2, NICHT GEPRÜFT.
 set -uo pipefail
@@ -20,7 +22,7 @@ HIER="$(cd "$(dirname "$0")" && pwd)"
 LYCHEE="${LYCHEE:-lychee}"
 MARKDOWNLINT="${MARKDOWNLINT:-markdownlint-cli2}"
 REGELSATZ="${REGELSATZ:-$HIER/../.markdownlint-cli2.yaml}"
-MIN_PROBEN=24
+MIN_PROBEN=40
 command -v "$LYCHEE" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: lychee fehlt ($LYCHEE)."; exit 2; }
 command -v "$MARKDOWNLINT" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: markdownlint-cli2 fehlt ($MARKDOWNLINT)."; exit 2; }
 [ -f "$REGELSATZ" ] || { echo "NICHT GEPRÜFT: Regelsatz fehlt ($REGELSATZ)."; exit 2; }
@@ -44,8 +46,9 @@ git config user.name test
 
 # shellcheck disable=SC2016  # wörtlich gemeint: genau dieser Text darf nie ausgeführt werden
 GEFAHR='x$(touch MARKE).md'
-# Altlast: eine Liste ohne Leerzeile (MD032) und ein toter Link.
-altlast() { printf '# %s\n\nText\n- liste\n\n[tot](weg.md)\n' "$1"; }
+# Altlast: eine Liste ohne Leerzeile (MD032) und ein toter Link. Der externe Link wird offline
+# ausgeschlossen; so hängt lychee wie in echten Repos „👻 N Excluded“ an seine Zusammenfassung.
+altlast() { printf '# %s\n\nText\n- liste\n\n[tot](weg.md) und [extern](https://example.invalid/)\n' "$1"; }
 altlast alt > alt.md
 altlast umzug > umzug.md
 altlast umlaut > 'ä b.md'
@@ -127,6 +130,63 @@ pruefe "Kein Name wurde als Befehl ausgeführt" nein "$([ -e MARKE ] || [ -e "$W
 szenario s9 sh -c 'printf x > notiz.txt'
 lauf lint "$BASIS";  pruefe "Ohne .md-Änderung: rc 0" 0 "$RC"
 pruefe "Ohne .md-Änderung: Meldung" 1 "$(hat 'Keine geänderten Markdown-Dateien.')"
+
+# 10) Neue Datei, deren Name wie die Zusammenfassung des Werkzeugs aussieht.
+faelschung() {
+  printf '# F\n\n[tot](nirgends.md)\n' > '🚫 0 Error.md'
+  printf '# S\n\nText\n- liste\n' > 'Summary: 0 issues in 0 files.md'
+}
+szenario s10 faelschung
+lauf links "$BASIS"; pruefe "Name '🚫 0 Error.md' fälscht Links nicht → rc 1" 1 "$RC"
+lauf lint "$BASIS";  pruefe "Name 'Summary: 0 issues…' fälscht Lint nicht → rc 1" 1 "$RC"
+
+# 11) Basis, die es nicht gibt: nicht grün, sondern NICHT GEPRÜFT.
+lauf lint 0000000000000000000000000000000000000000; pruefe "Unbekannte Basis: Lint rc 2" 2 "$RC"
+pruefe "Unbekannte Basis: Meldung" 1 "$(hat 'NICHT GEPRÜFT: git diff')"
+lauf links "basis-gibt-es-nicht"; pruefe "Unbekannte Basis: Links rc 2" 2 "$RC"
+
+# 12) Neue Markdown-Datei als Symlink auf eine Datei außerhalb des Repos.
+printf 'GEHEIM-INHALT\n- liste\n' > "$WEG/geheim.txt"
+symlink() { ln -s "$WEG/geheim.txt" zeiger.md; }
+szenario s12 symlink
+lauf lint "$BASIS";  pruefe "Symlink: Lint rc 1" 1 "$RC"
+pruefe "Symlink: als solcher gemeldet" 1 "$(hat 'FEHLER  zeiger.md: Symlink')"
+pruefe "Symlink: Zielinhalt nicht im Log" 0 "$(hat 'GEHEIM-INHALT')"
+lauf links "$BASIS"; pruefe "Symlink: Links rc 1" 1 "$RC"
+lauf lint "";        pruefe "Symlink ohne Basis: rc 1" 1 "$RC"
+pruefe "Symlink ohne Basis: gemeldet" 1 "$(hat 'FEHLER  zeiger.md: Symlink')"
+
+# 13) Typänderung: eine Altlast wird zum Symlink.
+zu_link() { git rm -q alt.md; ln -s "$WEG/geheim.txt" alt.md; }
+szenario s13 zu_link
+lauf lint "$BASIS";  pruefe "Datei → Symlink: rc 1" 1 "$RC"
+pruefe "Datei → Symlink: gemeldet" 1 "$(hat 'FEHLER  alt.md: Symlink')"
+
+# 14) Typänderung: ein Symlink wird zur Datei mit Befund. Streng, kein Vergleich mit dem Ziel.
+#     Basis ist hier der Commit aus 13, in dem alt.md ein Symlink ist.
+LINKBASIS=$(git rev-parse s13)
+git checkout -q -B s14 "$LINKBASIS"
+git rm -q alt.md && altlast alt > alt.md && git add -A -- . && git commit -qm szenario
+lauf lint "$LINKBASIS"; pruefe "Symlink → Datei mit Befund: rc 1" 1 "$RC"
+pruefe "Symlink → Datei: streng als neue Datei" 1 "$(hat 'FEHLER  1 Befund(e) in neuen Dateien')"
+
+# 15) Name mit Zeilenumbruch: nicht still übersprungen, sondern NICHT GEPRÜFT.
+umbruch() { printf '# U\n' > "$(printf 'zeile\numbruch.md')"; }
+szenario s15 umbruch
+lauf lint "$BASIS";  pruefe "Zeilenumbruch im Namen: rc 2" 2 "$RC"
+pruefe "Zeilenumbruch im Namen: gemeldet" 1 "$(hat 'NICHT GEPRÜFT (Zeilenumbruch im Namen)')"
+
+# 16) Werkzeug, dessen Exit-Code nicht zur Zahl passt: NICHT GEPRÜFT statt der Zahl glauben.
+cat > "$WEG/lychee-widerspruch" <<'EOF'
+#!/usr/bin/env bash
+echo '🔍 1 Total (in 0s) ✅ 1 OK 🚫 0 Errors'
+exit 2
+EOF
+chmod +x "$WEG/lychee-widerspruch"
+git checkout -q s5
+RC=0; LYCHEE="$WEG/lychee-widerspruch" bash "$HIER/basis-vergleich.sh" links "$BASIS" . > "$WEG/aus" 2>&1 || RC=$?
+pruefe "Exit-Code widerspricht Zahl: rc 2" 2 "$RC"
+pruefe "Exit-Code widerspricht Zahl: gemeldet" 1 "$(hat 'nicht auswertbar (rc=2')"
 
 echo "PASS=$PASS FAIL=$FAIL"
 if [ $((PASS + FAIL)) -lt "$MIN_PROBEN" ]; then

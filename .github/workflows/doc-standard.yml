@@ -10,6 +10,14 @@
 # - Lint und Links laufen mit Ratchet (standard/basis-vergleich.sh): Neue Dateien werden streng
 #   geprüft. Geänderte Dateien dürfen nicht mehr Befunde haben als an der Basis, damit ein Repo
 #   mit Altlasten den Standard einführen kann, ohne vorher alles zu bereinigen.
+#
+# Bewusste Grenzen von v1.1:
+# - `runs-on` nimmt genau ein Label, keine Liste und keine Gruppe.
+# - Eigene Runner: Dieser Workflow liest Dateien aus dem PR. Für PRs aus Forks keinen Runner mit
+#   Zugang zu internen Netzen oder Zugangsdaten nehmen; Symlinks lehnt basis-vergleich.sh ab.
+# - Eine Umbenennung über die Grenze von `pfad` hinweg gilt als neue Datei (streng).
+# - `.lycheeignore` und `.gitleaks.toml` des geprüften Repos werden nicht gelesen.
+# - markdownlint-cli2 ist auf die Version gepinnt, seine Abhängigkeiten nicht (kein Lockfile).
 name: doc-standard
 
 on:
@@ -32,15 +40,16 @@ on:
         type: string
         default: 'main'
       runs-on:
-        description: "Runner-Label für alle Jobs, z. B. ein eigener Runner. Linux mit bash, curl, git, npm; x64 oder arm64."
+        description: "Ein Runner-Label für alle Jobs, z. B. ein eigener Runner. Linux mit bash, curl, git, npm; x64 oder arm64."
         type: string
         default: 'ubuntu-latest'
 
 permissions: {}
 
 concurrency:
-  # runs-on im Namen: zwei Aufrufe aus demselben Lauf (z. B. Matrix) brachen sich sonst gegenseitig ab.
-  group: doc-standard-${{ github.workflow }}-${{ github.ref }}-${{ inputs.runs-on }}
+  # runs-on und pfad im Namen: zwei Aufrufe aus demselben Lauf (Matrix, mehrere Teilbäume)
+  # brachen sich sonst gegenseitig ab.
+  group: doc-standard-${{ github.workflow }}-${{ github.ref }}-${{ inputs.runs-on }}-${{ inputs.pfad }}
   cancel-in-progress: true
 
 env:

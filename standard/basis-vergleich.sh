@@ -17,10 +17,12 @@
 # damit relative Links gegen den damaligen Stand aufgelöst werden.
 #
 # Dateinamen kommen aus `git diff -z` und gehen nur zeilenweise in Listen, nie in eine
-# Shell-Zeile (siehe md-dateien.sh). Namen mit Zeilenumbruch werden gemeldet und übersprungen.
+# Shell-Zeile (siehe md-dateien.sh). Namen mit Zeilenumbruch lassen sich so nicht prüfen:
+# sie werden gemeldet, und der Lauf endet mit NICHT GEPRÜFT.
 #
 # Exit 0: nichts verschlechtert · 1: mindestens ein FEHLER · 2: NICHT GEPRÜFT (Werkzeug fehlt
-# oder brach ab).
+# oder brach ab, git diff scheiterte, ein Name mit Zeilenumbruch ließ sich nicht prüfen).
+# Symlinks und Typänderungen gelten als FEHLER bzw. als neue Datei.
 set -uo pipefail
 
 HIER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,18 +43,31 @@ trap 'rm -rf "$WEG"' EXIT
 
 # lauf <baum> <liste>: Zahl der Befunde in den gelisteten Dateien, geprüft im Baum <baum>.
 # Rückgabe 2, wenn das Werkzeug keinen auswertbaren Lauf geliefert hat.
+#
+# Die Zahl kommt aus der Zusammenfassung des Werkzeugs. Dateinamen stehen in derselben Ausgabe
+# und gehören dem geprüften Repo: eine Datei `🚫 0 Error.md` täuschte sonst „0 Fehler“ vor.
+# Darum ist die Zeile am Anfang verankert, und der Exit-Code muss zur Zahl passen
+# (0 ⇔ keine Befunde). Passt beides nicht zusammen, gilt der Lauf als NICHT GEPRÜFT.
 lauf() {
-  local baum="$1" liste="$2" out="$WEG/out" rc n
+  local baum="$1" liste="$2" out="$WEG/out" rc n ohne mit
   if [ "$MODUS" = lint ]; then
     (cd "$baum" && bash "$HIER/markdown-lint.sh" "$liste" "$REGELSATZ") > "$out" 2>&1; rc=$?
-    n=$(sed -nE 's/^Summary: ([0-9]+) issue.*/\1/p' "$out" | head -n 1)
-    [ "$rc" -le 1 ] && [ -n "$n" ] || { cat "$out" >&2; return 2; }
+    # markdownlint-cli2 druckt die Zusammenfassung vor den Befunden: die erste Zeile zählt.
+    n=$(sed -nE 's/^Summary: ([0-9]+) issues? in [0-9]+ files?$/\1/p' "$out" | head -n 1)
+    ohne=0; mit=1
   else
     (cd "$baum" && bash "$HIER/links-pruefen.sh" "$liste") > "$out" 2>&1; rc=$?
-    n=$(sed -nE 's/.*🚫 ([0-9]+) Error.*/\1/p' "$out" | head -n 1)
-    [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] && [ -n "$n" ] || { cat "$out" >&2; return 2; }
+    # lychee druckt die Zusammenfassung nach den Befunden: die letzte Zeile zählt. Hinter den
+    # Fehlern können weitere Zähler folgen („👻 9 Excluded“).
+    n=$(sed -nE 's/^🔍 [0-9]+ Total .* 🚫 ([0-9]+) Errors?( .*)?$/\1/p' "$out" | tail -n 1)
+    ohne=0; mit=2
   fi
-  echo "$n"
+  if [ -n "$n" ] && { { [ "$rc" -eq "$ohne" ] && [ "$n" -eq 0 ]; } || { [ "$rc" -eq "$mit" ] && [ "$n" -gt 0 ]; }; }; then
+    echo "$n"
+  else
+    { echo "Werkzeug-Ausgabe nicht auswertbar (rc=$rc, Zahl='${n}'):"; cat "$out"; } >&2
+    return 2
+  fi
 }
 
 # befunde <baum> <name>: wie lauf, für genau eine Datei.
@@ -65,31 +80,60 @@ zeige() { sed 's/^/        /' "$WEG/out"; }
 
 FEHLER=0
 HINWEISE=0
+UNGEPRUEFT=0
 streng=()     # neue Dateien
 paare=()      # "alt<TAB>neu" für geänderte Dateien
 
+# Erst in eine Datei, dann lesen: aus `< <(…)` käme ein Abbruch von git nie an, die Listen
+# blieben leer und der Lauf meldete „keine Änderungen“, also grün.
 if [ -z "$BASIS" ]; then
-  while IFS= read -r name; do streng+=("$name"); done < <(bash "$HIER/md-dateien.sh" "" "$PFAD")
+  bash "$HIER/md-dateien.sh" "" "$PFAD" > "$WEG/alle" 2> "$WEG/alle.err" \
+    || { cat "$WEG/alle.err" >&2; echo "NICHT GEPRÜFT: Dateiliste nicht lesbar"; exit 2; }
+  if [ -s "$WEG/alle.err" ]; then cat "$WEG/alle.err" >&2; UNGEPRUEFT=$((UNGEPRUEFT + 1)); fi
+  while IFS= read -r name; do streng+=("$name"); done < "$WEG/alle"
 else
+  git -c core.quotePath=false diff -z --name-status -M --diff-filter=ACMRT "$BASIS" HEAD -- "$PFAD" > "$WEG/diff" \
+    || { echo "NICHT GEPRÜFT: git diff gegen $BASIS gescheitert"; exit 2; }
   # Datensätze aus -z: Status, Pfad (bei R/C: alter Pfad, neuer Pfad).
   while IFS= read -r -d '' status; do
     IFS= read -r -d '' a || break
     b=""
     case "$status" in R*|C*) IFS= read -r -d '' b || break ;; esac
     for n in "$a" "$b"; do
-      case "$n" in *$'\n'*) printf 'übersprungen (Zeilenumbruch im Namen): %q\n' "$n" >&2; continue 2 ;; esac
+      case "$n" in *$'\n'*)
+        printf 'NICHT GEPRÜFT (Zeilenumbruch im Namen): %q\n' "$n"; UNGEPRUEFT=$((UNGEPRUEFT + 1)); continue 2 ;;
+      esac
     done
     case "$status" in
       A*)   [[ "$a" == *.md ]] && streng+=("$a") ;;
       M*)   [[ "$a" == *.md ]] && paare+=("$a"$'\t'"$a") ;;
+      # Typänderung (Symlink ↔ Datei): der Basisinhalt eines Symlinks ist nur sein Ziel.
+      T*)   [[ "$a" == *.md ]] && streng+=("$a") ;;
       R*)   [[ "$b" == *.md ]] || continue
             if [[ "$a" == *.md ]]; then paare+=("$a"$'\t'"$b"); else streng+=("$b"); fi ;;
       C*)   [[ "$b" == *.md ]] && streng+=("$b") ;;
     esac
-  done < <(git -c core.quotePath=false diff -z --name-status -M --diff-filter=ACMR "$BASIS" HEAD -- "$PFAD")
+  done < "$WEG/diff"
 fi
 
+# Symlinks nie lesen: cp und lychee folgten ihnen zu beliebigen Dateien des Runners, deren
+# Inhalt dann in Befundzeilen im Log stünde. Eine verlinkte .md ist deshalb selbst ein FEHLER.
+ohne_links() {  # ohne_links <array-name>: entfernt Symlinks aus der Liste, meldet sie
+  local -n liste="$1"
+  local behalten=() eintrag pfad
+  for eintrag in ${liste[@]+"${liste[@]}"}; do
+    pfad="${eintrag#*$'\t'}"
+    if [ -L "$WURZEL/$pfad" ]; then echo "FEHLER  $pfad: Symlink, wird nicht gelesen"; FEHLER=$((FEHLER + 1))
+    else behalten+=("$eintrag"); fi
+  done
+  liste=(${behalten[@]+"${behalten[@]}"})
+}
+ohne_links streng
+ohne_links paare
+
 if [ "${#streng[@]}" -eq 0 ] && [ "${#paare[@]}" -eq 0 ]; then
+  [ "$FEHLER" -gt 0 ] && exit 1
+  [ "$UNGEPRUEFT" -gt 0 ] && exit 2
   echo "Keine geänderten Markdown-Dateien."
   exit 0
 fi
@@ -127,5 +171,6 @@ if [ "${#paare[@]}" -gt 0 ]; then
   done
 fi
 
-echo "FEHLER=$FEHLER HINWEIS=$HINWEISE"
-[ "$FEHLER" -eq 0 ]
+echo "FEHLER=$FEHLER HINWEIS=$HINWEISE NICHT_GEPRUEFT=$UNGEPRUEFT"
+[ "$FEHLER" -eq 0 ] || exit 1
+[ "$UNGEPRUEFT" -eq 0 ] || exit 2
