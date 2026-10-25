@@ -4,6 +4,7 @@
 # Geprüft wird, dass
 # - ein Schlüssel im Diff gefunden wird, auch wenn die .gitattributes des Repos `* -diff` setzt,
 # - ein Diff ohne Schlüssel grün bleibt, auch wenn an der Basis schon einer lag,
+# - bei einem Push mit mehreren Commits jeder Commit zählt, nicht nur der letzte,
 # - ohne Basis der ganze Baum gescannt wird,
 # - ein fehlendes gitleaks NICHT GEPRÜFT ergibt, nicht grün.
 #
@@ -13,7 +14,7 @@ set -uo pipefail
 
 HIER="$(cd "$(dirname "$0")" && pwd)"
 GITLEAKS="${GITLEAKS:-gitleaks}"
-MIN_PROBEN=8
+MIN_PROBEN=9
 command -v "$GITLEAKS" >/dev/null 2>&1 || { echo "NICHT GEPRÜFT: gitleaks fehlt ($GITLEAKS)."; exit 2; }
 export GITLEAKS
 
@@ -63,6 +64,15 @@ printf 'noch harmloser\n' >> notiz.txt && git commit -qam s2
 scan "$S1"
 pruefe "sauberer Diff: rc 0" 0 "$RC"
 pruefe "sauberer Diff: nichts gemeldet" 1 "$(hat 'no leaks found')"
+
+# 2b) Push mit zwei Commits: der Schlüssel im ersten, der zweite sauber. HEAD~1..HEAD sähe ihn nicht.
+git checkout -q -B s2b "$BASIS"
+printf 'aws_access_key_id = %s\n' "$(schluessel)" > zugang2.txt
+git add -- . && git commit -qm s2b-1
+printf 'danach\n' >> notiz.txt && git commit -qam s2b-2
+scan "$BASIS"
+pruefe "zwei Commits, Schlüssel im ersten: rc 1" 1 "$RC"
+git checkout -q s2
 
 # 3) Ohne Basis: der ganze Baum, also auch der alte Schlüssel.
 scan ""

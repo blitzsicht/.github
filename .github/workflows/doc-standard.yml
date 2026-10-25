@@ -182,6 +182,7 @@ jobs:
         if: ${{ always() }}
         shell: bash
         env:
+          VORBEREITUNG: ${{ steps.standard.outcome }}
           TOR: ${{ steps.aenderungen.outcome }}
           MD: ${{ steps.aenderungen.outputs.md }}
           REPO: ${{ steps.repo.outcome }}
@@ -191,7 +192,9 @@ jobs:
         run: |
           wort() {
             case "$1" in
-              success) echo "grün" ;; failure) echo "**rot**" ;; cancelled) echo "abgebrochen" ;;
+              success) echo "grün" ;; cancelled) echo "abgebrochen" ;;
+              # aenderungen.sh endet nur mit 0 oder 2: ein rotes Tor heißt „Dateiliste nicht lesbar“.
+              failure) if [ "$2" = tor ]; then echo "**nicht geprüft** (Dateiliste nicht lesbar)"; else echo "**rot**"; fi ;;
               skipped) if [ "$2" = md ] && [ "$MD" = false ]; then echo "keine Markdown-Änderung"; else echo "nicht gelaufen"; fi ;;
               *) echo "nicht gelaufen" ;;
             esac
@@ -201,7 +204,8 @@ jobs:
             echo
             echo "| Prüfung | Ergebnis |"
             echo "|---|---|"
-            echo "| Tor (geänderte Markdown-Dateien) | $(wort "$TOR") |"
+            echo "| Vorbereitung (Wächter, Standard) | $(wort "$VORBEREITUNG") |"
+            echo "| Tor (geänderte Markdown-Dateien) | $(wort "$TOR" tor) |"
             echo "| Struktur (pruefe-repo.sh) | $(wort "$REPO") |"
             echo "| Markdown-Lint | $(wort "$LINT" md) |"
             echo "| Interne Links | $(wort "$LINKS" md) |"

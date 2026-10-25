@@ -15,4 +15,4 @@ jobs:
       # Eigener Runner (x64 oder arm64): {% raw %}runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}{% endraw %}
       # Dateien, die nicht umformatiert werden dürfen (ein Glob je Zeile, nur vom Lint ausgenommen):
       # lint-ignores: |
-      #   vendor/**/*.md
+      #   vendor/*.md

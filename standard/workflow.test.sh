@@ -18,7 +18,7 @@ set -uo pipefail
 
 HIER="$(cd "$(dirname "$0")" && pwd)"
 WORKFLOW="${WORKFLOW:-$HIER/../.github/workflows/doc-standard.yml}"
-MIN_PROBEN=28
+MIN_PROBEN=39
 [ -f "$WORKFLOW" ] || { echo "NICHT GEPRÜFT: Workflow fehlt ($WORKFLOW)."; exit 2; }
 
 PASS=0
@@ -31,7 +31,7 @@ pruefe() {  # pruefe <bezeichnung> <soll> <ist>
 WEG=$(mktemp -d)
 trap 'rm -rf "$WEG"' EXIT
 
-# feld <job> <schritt> <feld>: Wert eines Felds (if, run, uses, id, name) eines Schritts.
+# feld <job> <schritt> <feld>: Wert eines Felds (if, run, uses, id, name, env.NAME) eines Schritts.
 # <schritt> ist die id, der name oder `#N` (N-ter Schritt, ab 0). `#anzahl` gibt die Zahl der
 # Schritte aus, `job-if` das if des Jobs.
 feld() {
@@ -60,6 +60,11 @@ for n, s in enumerate(starts):
         m = re.match(r'^        (\w[\w-]*): ?(.*)$', teil[i])
         if m:
             k, v = m.group(1), m.group(2)
+            if v == '' and k == 'env':
+                i += 1
+                while i < len(teil) and (m2 := re.match(r'^          (\w+): (.*)$', teil[i])):
+                    werte['env.' + m2.group(1)] = m2.group(2); i += 1
+                continue
             if v in ('|', '>'):
                 rumpf = []
                 i += 1
@@ -138,16 +143,51 @@ for ((i = S + 1; i < $(feld pruefen '#anzahl' x); i++)); do
 done
 pruefe "nach dem Verschieben kein .doc-standard mehr" 0 "$spaeter"
 
-# 6) Bedingungen der Prüfschritte.
-for id in repo lint links secrets; do
-  pruefe "$id läuft auch nach einem roten Schritt" 1 "$(feld pruefen "$id" if | grep -c '!cancelled()')"
-done
-for id in lint links; do
-  pruefe "$id nur bei offenem Tor" 1 "$(feld pruefen "$id" if | grep -c "steps.aenderungen.outputs.md == 'true'")"
-done
-pruefe "secrets nur mit ausgewertetem Tor (Basis)" 1 "$(feld pruefen secrets if | grep -c "steps.aenderungen.outcome == 'success'")"
-# shellcheck disable=SC2016  # Ausdruck von GitHub, nicht von der Shell
+# 6) Bedingungen der Prüfschritte, exakt: eine Teilstring-Suche ließe `success() && !cancelled()` durch.
+# shellcheck disable=SC2016  # Ausdrücke von GitHub, nicht von der Shell
+TOR_OFFEN='${{ !cancelled() && steps.aenderungen.outcome == '"'success'"' && steps.aenderungen.outputs.md == '"'true'"' }}'
+# shellcheck disable=SC2016
+pruefe "repo läuft auch nach einem roten Schritt" '${{ !cancelled() && steps.standard.outcome == '"'success'"' }}' "$(feld pruefen repo if)"
+pruefe "lint: auch nach rotem Schritt, nur bei offenem Tor" "$TOR_OFFEN" "$(feld pruefen lint if)"
+pruefe "links: auch nach rotem Schritt, nur bei offenem Tor" "$TOR_OFFEN" "$(feld pruefen links if)"
+# shellcheck disable=SC2016
+pruefe "secrets: auch nach rotem Schritt, mit ausgewertetem Tor" '${{ !cancelled() && steps.aenderungen.outcome == '"'success'"' }}' "$(feld pruefen secrets if)"
+# shellcheck disable=SC2016
 pruefe "Zusammenfassung immer" '${{ always() }}' "$(feld pruefen Zusammenfassung if)"
+
+# 6b) Was die Schritte bekommen: Basis des PR (nicht sein Kopf), Basis aus dem Tor, Ausnahmen.
+# shellcheck disable=SC2016
+pruefe "Tor: Basis des PR" '${{ github.event.pull_request.base.sha }}' "$(feld pruefen aenderungen env.PR_BASIS)"
+# shellcheck disable=SC2016
+pruefe "Tor: sonst before des Pushs" '${{ github.event.before }}' "$(feld pruefen aenderungen env.VORHER)"
+# shellcheck disable=SC2016
+pruefe "Tor: PR-Basis vor before" 1 "$(feld pruefen aenderungen run | grep -cF '"${PR_BASIS:-$VORHER}"')"
+for id in lint links secrets; do
+  # shellcheck disable=SC2016
+  pruefe "$id: Basis aus dem Tor" '${{ steps.aenderungen.outputs.basis }}' "$(feld pruefen "$id" env.BASIS)"
+done
+# shellcheck disable=SC2016
+pruefe "lint: lint-ignores durchgereicht" '${{ inputs.lint-ignores }}' "$(feld pruefen lint env.LINT_AUSNAHMEN)"
+
+# 6c) Zusammenfassung ausführen: jedes Ergebnis landet in seiner Zeile, rot bleibt rot.
+feld pruefen Zusammenfassung run > "$WEG/zusammenfassung.sh"
+zusammenfassung() {  # zusammenfassung VORBEREITUNG TOR MD REPO LINT LINKS SECRETS → Tabelle nach $WEG/summary
+  : > "$WEG/summary"
+  VORBEREITUNG="$1" TOR="$2" MD="$3" REPO="$4" LINT="$5" LINKS="$6" SECRETS="$7" \
+    GITHUB_STEP_SUMMARY="$WEG/summary" bash "$WEG/zusammenfassung.sh" > /dev/null 2>&1
+}
+zeile() { grep -cxF "| $1 | $2 |" "$WEG/summary"; }
+zusammenfassung success success true failure failure failure success
+pruefe "Zusammenfassung: Struktur rot" 1 "$(zeile 'Struktur (pruefe-repo.sh)' '**rot**')"
+pruefe "Zusammenfassung: Lint und Links beide rot" 2 "$(($(zeile 'Markdown-Lint' '**rot**') + $(zeile 'Interne Links' '**rot**')))"
+pruefe "Zusammenfassung: Secrets grün" 1 "$(zeile 'Secrets im Diff' 'grün')"
+zusammenfassung success success false success skipped skipped success
+pruefe "Zusammenfassung: Tor zu → keine Markdown-Änderung" 2 "$(grep -c '| keine Markdown-Änderung |$' "$WEG/summary")"
+zusammenfassung success failure '' success skipped skipped skipped
+pruefe "Zusammenfassung: Tor gescheitert → nicht geprüft" 1 "$(zeile 'Tor (geänderte Markdown-Dateien)' '**nicht geprüft** (Dateiliste nicht lesbar)')"
+pruefe "Zusammenfassung: danach nicht gelaufen statt grün" 3 "$(grep -c '| nicht gelaufen |$' "$WEG/summary")"
+zusammenfassung skipped skipped '' skipped skipped skipped skipped
+pruefe "Zusammenfassung: Vorbereitung gescheitert sichtbar" 1 "$(zeile 'Vorbereitung (Wächter, Standard)' 'nicht gelaufen')"
 
 # 7) Drift nur für PRs aus demselben Repo; alle Actions auf einen Commit gepinnt.
 pruefe "Drift lässt Fork-PRs aus" 1 "$(feld drift-hinweis job-if x | grep -c 'github.event.pull_request.head.repo.full_name == github.repository')"

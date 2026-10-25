@@ -11,4 +11,4 @@ jobs:
       # runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
       # Dateien, die nicht umformatiert werden dürfen (ein Glob je Zeile, nur vom Lint ausgenommen):
       # lint-ignores: |
-      #   vendor/**/*.md
+      #   vendor/*.md

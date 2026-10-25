@@ -175,7 +175,8 @@ jobs:
           open(p, 'w').write(s.replace(a, b))
           PY
             bash "$d/$1" > "$d/out" 2>&1 || rc=$?
-            if [ "$rc" -eq 1 ]; then echo "OK: $3 wird erkannt"
+            # rc 1 allein reicht nicht: ein Test, der vorher abbricht, endete auch mit 1.
+            if [ "$rc" -eq 1 ] && grep -q '^FEHLT' "$d/out"; then echo "OK: $3 wird erkannt"
             else echo "::error::$3 blieb unerkannt (rc=$rc)"; cat "$d/out"; exit 1; fi
           }
           # shellcheck disable=SC2016  # Skripttext, wird erst in der Kopie ersetzt
@@ -188,6 +189,10 @@ jobs:
           sabotiere aenderungen.test.sh aenderungen.sh "Listen im Checkout" \
             'nur="$LISTEN/md-nur.txt"' 'nur="md-nur.txt"'
           sabotiere aenderungen.test.sh aenderungen.sh "Abbruch der Dateiliste ignoriert" '  exit 2' '  true'
+          sabotiere aenderungen.test.sh aenderungen.sh "Tor immer zu" 'then echo "md=true"; else' 'then echo "md=false"; else'
+          # shellcheck disable=SC2016
+          sabotiere secrets-pruefen.test.sh secrets-pruefen.sh "Secret-Scan nur der letzte Commit" \
+            '${BASIS}..HEAD' 'HEAD~1..HEAD'
           # shellcheck disable=SC2016
           sabotiere secrets-pruefen.test.sh secrets-pruefen.sh "gitleaks ohne --text" \
             '--log-opts="--text ' '--log-opts="'
@@ -215,7 +220,7 @@ jobs:
           open(z, 'w', encoding='utf-8').write(s.replace(a, b))
           PY
             WORKFLOW="$d/wf.yml" bash standard/workflow.test.sh > "$d/out" 2>&1 || rc=$?
-            if [ "$rc" -eq 1 ]; then echo "OK: $1 wird erkannt"
+            if [ "$rc" -eq 1 ] && grep -q '^FEHLT' "$d/out"; then echo "OK: $1 wird erkannt"
             else echo "::error::$1 blieb unerkannt (rc=$rc)"; cat "$d/out"; exit 1; fi
           }
           sabotiere "Wächter aus" 'if [ -e .doc-standard ] || [ -L .doc-standard ]; then' 'if false; then'
@@ -230,6 +235,13 @@ jobs:
             "name: Interne Links (Ratchet)\n        if: %{{ !cancelled() && steps.aenderungen.outcome == 'success' && steps.aenderungen.outputs.md == 'true' }}" \
             "name: Interne Links (Ratchet)\n        if: %{{ !cancelled() && steps.aenderungen.outcome == 'success' }}"
           sabotiere "Zusammenfassung nur bei Erfolg" 'if: %{{ always() }}' 'if: %{{ success() }}'
+          sabotiere "Lint nur nach Erfolg (success vor !cancelled)" \
+            'name: Markdown-Lint (Ratchet)\n        if: %{{ !cancelled() && ' 'name: Markdown-Lint (Ratchet)\n        if: %{{ success() && !cancelled() && '
+          sabotiere "Zusammenfassung meldet rot als grün" 'else echo "**rot**"; fi ;;' 'else echo "grün"; fi ;;'
+          # shellcheck disable=SC2016  # Skripttext, wird erst in der Kopie ersetzt
+          sabotiere "Tor-Fehler als rot statt nicht geprüft" 'if [ "$2" = tor ]; then' 'if false; then'
+          sabotiere "Tor mit dem Kopf statt der Basis des PR" 'github.event.pull_request.base.sha' 'github.event.pull_request.head.sha'
+          sabotiere "lint-ignores nicht durchgereicht" 'LINT_AUSNAHMEN: %{{ inputs.lint-ignores }}' 'LINT_IGNORES: %{{ inputs.lint-ignores }}'
           sabotiere "Drift auch für Fork-PRs" ' && github.event.pull_request.head.repo.full_name == github.repository' ''
           sabotiere "Action per Tag statt Commit" 'github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3' 'github-script@v9'
 
