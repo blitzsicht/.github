@@ -38,7 +38,8 @@
 #   bricht der Link in einer unveränderten Datei, ohne dass dieser Lauf es meldet.
 # - markdownlint-cli2 ist auf die Version gepinnt, seine Abhängigkeiten nicht (kein Lockfile).
 # - Rechte: Der Aufrufer gibt `contents: read` und `pull-requests: write`. Letzteres braucht nur
-#   der Drift-Hinweis; ob ein Aufruf ohne es startet, wenn `drift-pfade` leer ist, ist ungeprüft.
+#   der Drift-Hinweis, ohne es startet der Aufruf aber gar nicht (startup_failure), auch wenn
+#   `drift-pfade` leer ist und der Job übersprungen würde.
 # - Kein Pfadfilter, auch nicht im Beispielaufruf: der Secret-Scan soll Code-PRs ebenso sehen,
 #   und ein Lauf belegt nur einen Runner-Platz.
 # - Der Drift-Hinweis läuft nur für PRs aus demselben Repo: bei Fork-PRs ist das Token nur lesend.
