@@ -9,6 +9,7 @@ permissions:
 jobs:
   doc-standard:
     # Beide Refs gleich halten: Workflow und Prüfskript kommen aus demselben Stand.
-    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.0
+    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.1
     with:
-      standard-ref: standard-v1.0
+      standard-ref: standard-v1.1
+      # Eigener Runner (x64 oder arm64): {% raw %}runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}{% endraw %}

@@ -12,6 +12,7 @@ Betrieb: geplant
 1. [docs/INDEX.md](docs/INDEX.md): wo was steht.
 2. Offene Issues bzw. den Stand des Planungswerkzeugs.
 3. Die jüngsten Dateien in [docs/decisions/](docs/decisions/).
+4. Bei einer Fortsetzung die Übergabe des Strangs, den der Auftrag nennt, nicht die jüngste.
 {%- else -%}
 1. [README.md](README.md).
 {%- endif %}

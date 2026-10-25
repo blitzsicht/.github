@@ -16,14 +16,17 @@
 #   ein Array (links-pruefen.sh), nie per Ersetzung in einen Befehlstext.
 #
 # Namen mit Zeilenumbruch lassen sich in einer Zeilenliste nicht darstellen. Sie werden
-# übersprungen und auf stderr gemeldet, nicht still verworfen.
+# übersprungen und auf stderr gemeldet, nicht still verworfen. Wer die Liste als Tor nutzt
+# („gibt es überhaupt etwas zu prüfen?“), wertet deshalb auch stderr aus.
+#
+# T (Typänderung, etwa Symlink → Datei) zählt als Änderung: sonst sah das Tor eine leere Liste.
 set -euo pipefail
 
 BASIS="${1-}"
 PFAD="${2:-.}"
 
 if [ -n "$BASIS" ]; then
-  git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR "$BASIS" HEAD -- "$PFAD"
+  git -c core.quotePath=false diff -z --name-only --diff-filter=ACMRT "$BASIS" HEAD -- "$PFAD"
 else
   git -c core.quotePath=false ls-files -z -- "$PFAD"
 fi | while IFS= read -r -d '' name; do
