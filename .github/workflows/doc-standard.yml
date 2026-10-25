@@ -19,7 +19,10 @@
 # - Das geprüfte Repo darf die Prüfung sichtbar lockern: `.lycheeignore` (liest lychee),
 #   `<!-- markdownlint-disable -->` in einer Datei, Pfade unter den `ignores` des Regelsatzes.
 #   Die Prüfung schützt vor Versehen und vor Code aus dem PR, nicht vor einem Autor, der sie
-#   im Diff abschaltet. `.gitleaks.toml` des Repos liest der Secrets-Job nicht.
+#   im Diff abschaltet. Dasselbe gilt für `.gitleaks.toml` und `.gitleaksignore`: gitleaks
+#   liest beide aus dem geprüften Repo, ein Eintrag dort kann einen Fund ausblenden.
+# - Geprüft werden nur geänderte Markdown-Dateien. Löscht oder verschiebt ein PR ein Linkziel,
+#   bricht der Link in einer unveränderten Datei, ohne dass dieser Lauf es meldet.
 # - markdownlint-cli2 ist auf die Version gepinnt, seine Abhängigkeiten nicht (kein Lockfile).
 name: doc-standard
 
@@ -72,6 +75,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
+      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
+      # würde vom folgenden Checkout geleert und überschrieben.
+      - name: Kein .doc-standard im geprüften Repo
+        shell: bash
+        run: |
+          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
+            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: ${{ env.STANDARD_REPO }}
@@ -88,12 +99,15 @@ jobs:
           basis="${PR_BASIS:-$VORHER}"
           # Neuer Branch (before = 000…) oder unbekannte Basis: alles gilt als geändert.
           if [ -z "$basis" ] || ! git cat-file -e "$basis^{commit}" 2>/dev/null; then basis=""; fi
-          bash .doc-standard/standard/md-dateien.sh "$basis" "$PFAD" > md-nur.txt 2> md-uebersprungen.txt
-          cat md-uebersprungen.txt >&2
+          # Listen außerhalb des Checkouts: eine gleichnamige Datei aus dem PR (Symlink auf /dev/null
+          # oder nach außen) hätte sonst das Tor geschlossen bzw. eine fremde Datei überschrieben.
+          nur="$RUNNER_TEMP/md-nur.txt"; uebersprungen="$RUNNER_TEMP/md-uebersprungen.txt"
+          bash .doc-standard/standard/md-dateien.sh "$basis" "$PFAD" > "$nur" 2> "$uebersprungen"
+          cat "$uebersprungen" >&2
           echo "basis=$basis" >> "$GITHUB_OUTPUT"
           # Auch übersprungene Namen öffnen das Tor: die Prüfjobs melden sie dann als NICHT GEPRÜFT.
-          if [ -s md-nur.txt ] || [ -s md-uebersprungen.txt ]; then echo "md=true" >> "$GITHUB_OUTPUT"; else echo "md=false" >> "$GITHUB_OUTPUT"; fi
-          echo "Geänderte Markdown-Dateien: $(wc -l < md-nur.txt)"
+          if [ -s "$nur" ] || [ -s "$uebersprungen" ]; then echo "md=true" >> "$GITHUB_OUTPUT"; else echo "md=false" >> "$GITHUB_OUTPUT"; fi
+          echo "Geänderte Markdown-Dateien: $(wc -l < "$nur")"
 
   pruefe-repo:
     runs-on: ${{ inputs.runs-on }}
@@ -102,6 +116,14 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
+      # würde vom folgenden Checkout geleert und überschrieben.
+      - name: Kein .doc-standard im geprüften Repo
+        shell: bash
+        run: |
+          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
+            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: ${{ env.STANDARD_REPO }}
@@ -125,6 +147,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
+      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
+      # würde vom folgenden Checkout geleert und überschrieben.
+      - name: Kein .doc-standard im geprüften Repo
+        shell: bash
+        run: |
+          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
+            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: ${{ env.STANDARD_REPO }}
@@ -158,6 +188,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
+      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
+      # würde vom folgenden Checkout geleert und überschrieben.
+      - name: Kein .doc-standard im geprüften Repo
+        shell: bash
+        run: |
+          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
+            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: ${{ env.STANDARD_REPO }}
@@ -185,6 +223,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
+      # Ein gleichnamiger Eintrag aus dem PR (etwa ein Symlink nach außerhalb des Workspace)
+      # würde vom folgenden Checkout geleert und überschrieben.
+      - name: Kein .doc-standard im geprüften Repo
+        shell: bash
+        run: |
+          if [ -e .doc-standard ] || [ -L .doc-standard ]; then
+            echo "::error::Das geprüfte Repo enthält .doc-standard; der Name ist für den Standard reserviert."; exit 1
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: ${{ env.STANDARD_REPO }}
