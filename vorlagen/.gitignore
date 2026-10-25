@@ -1,0 +1,3 @@
+# Umgebungsdateien enthalten Zugangsdaten; nur die Vorlage mit Platzhaltern gehört ins Repo.
+.env*
+!.env.example

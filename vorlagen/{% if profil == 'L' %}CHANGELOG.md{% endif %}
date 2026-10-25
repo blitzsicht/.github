@@ -1,3 +1,10 @@
 # Changelog
 
-Wird aus den Commit-Präfixen (feat, fix, docs …) erzeugt, nicht von Hand gepflegt.
+Wird von Hand gepflegt, im Stil von [Keep a Changelog](https://keepachangelog.com/de/1.1.0/):
+neue Einträge oben unter „Unveröffentlicht“, je Version gegliedert nach Hinzugefügt, Geändert,
+Veraltet, Entfernt, Behoben und Sicherheit.
+{#- Sammelt das Repo Änderungen auf anderem Weg (etwa als Fragmente je Modul), statt dieses
+    Absatzes eintragen, wo sie liegen. Steht als Jinja-Kommentar hier, damit der Hinweis an den
+    Autor nicht in der erzeugten Datei landet. #}
+
+## Unveröffentlicht
