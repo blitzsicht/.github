@@ -243,6 +243,10 @@ jobs:
           sabotiere "Tor mit dem Kopf statt der Basis des PR" 'github.event.pull_request.base.sha' 'github.event.pull_request.head.sha'
           sabotiere "lint-ignores nicht durchgereicht" 'LINT_AUSNAHMEN: %{{ inputs.lint-ignores }}' 'LINT_IGNORES: %{{ inputs.lint-ignores }}'
           sabotiere "Drift auch für Fork-PRs" ' && github.event.pull_request.head.repo.full_name == github.repository' ''
+          sabotiere "Drift auf dem Runner des Prüfjobs" 'runs-on: %{{ inputs.drift-runs-on }}' 'runs-on: %{{ inputs.runs-on }}'
+          sabotiere "Drift ohne Angabe nicht gehostet" \
+            "Schlange eigener Runner.\"\n        type: string\n        default: 'ubuntu-latest'" \
+            "Schlange eigener Runner.\"\n        type: string\n        default: 'eigener-runner'"
           sabotiere "Action per Tag statt Commit" 'github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3' 'github-script@v9'
 
   # Download je Architektur: Programm läuft, falsche Prüfsumme bricht ab und hinterlässt nichts.

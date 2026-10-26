@@ -4,11 +4,13 @@ on: {pull_request: {}, push: {branches: [main]}}
 permissions: {contents: read, pull-requests: write}
 jobs:
   doc-standard:
-    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.2
+    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.3
     with:
-      standard-ref: standard-v1.2
+      standard-ref: standard-v1.3
       # Eigener Runner (x64 oder arm64), z. B. über eine Org-Variable:
       # runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
+      # Der Drift-Hinweis läuft gehostet. Nur wenn gehostete Runner gesperrt sind:
+      # drift-runs-on: ${{ vars.CI_RUNS_ON }}
       # Dateien, die nicht umformatiert werden dürfen (ein Glob je Zeile, nur vom Lint ausgenommen):
       # lint-ignores: |
       #   vendor/*.md

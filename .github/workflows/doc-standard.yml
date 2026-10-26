@@ -23,8 +23,15 @@
 # - Tor und Secret-Scan stehen in Skripten mit eigenem Test (aenderungen.sh, secrets-pruefen.sh).
 # - `lint-ignores` nimmt Dateien vom Lint aus, die nicht umformatiert werden dürfen.
 #
+# Seit v1.3:
+# - Der Drift-Hinweis läuft auf `drift-runs-on` (Default `ubuntu-latest`), nicht mehr auf `runs-on`.
+#   Er arbeitet ~7 s ohne Checkout, wartete auf eigenen Runnern aber 2–4 min auf einen freien Platz
+#   und hielt den Lauf so offen. Gehostet kostet er eine abgerechnete Minute je PR. Wer keine
+#   gehosteten Runner nutzen darf, setzt `drift-runs-on`: ein Job ohne passenden Runner bliebe sonst
+#   in der Schlange, dort greift `timeout-minutes` nicht.
+#
 # Bewusste Grenzen:
-# - `runs-on` nimmt genau ein Label, keine Liste und keine Gruppe.
+# - `runs-on` und `drift-runs-on` nehmen genau ein Label, keine Liste und keine Gruppe.
 # - Eigene Runner: Dieser Workflow liest Dateien aus dem PR. Für PRs aus Forks keinen Runner mit
 #   Zugang zu internen Netzen oder Zugangsdaten nehmen; Symlinks lehnt basis-vergleich.sh ab.
 # - Eine Umbenennung über die Grenze von `pfad` hinweg gilt als neue Datei (streng).
@@ -65,7 +72,11 @@ on:
         type: string
         default: 'main'
       runs-on:
-        description: "Ein Runner-Label für alle Jobs, z. B. ein eigener Runner. Linux mit bash, curl, git, npm; x64 oder arm64."
+        description: "Ein Runner-Label für den Prüfjob, z. B. ein eigener Runner. Linux mit bash, curl, git, npm; x64 oder arm64."
+        type: string
+        default: 'ubuntu-latest'
+      drift-runs-on:
+        description: "Runner-Label für den Drift-Hinweis. Er läuft ein paar Sekunden ohne Checkout; gehostet wartet er nicht in der Schlange eigener Runner."
         type: string
         default: 'ubuntu-latest'
       lint-ignores:
@@ -218,7 +229,7 @@ jobs:
   drift-hinweis:
     # Nur PRs aus demselben Repo: bei Fork-PRs ist das Token nur lesend, der Kommentar scheiterte.
     if: github.event_name == 'pull_request' && inputs.drift-pfade != '' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ inputs.drift-runs-on }}
     timeout-minutes: 5
     continue-on-error: true
     permissions:

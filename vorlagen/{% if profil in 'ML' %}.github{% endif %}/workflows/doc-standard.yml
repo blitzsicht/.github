@@ -9,10 +9,11 @@ permissions:
 jobs:
   doc-standard:
     # Beide Refs gleich halten: Workflow und Prüfskript kommen aus demselben Stand.
-    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.2
+    uses: blitzsicht/.github/.github/workflows/doc-standard.yml@standard-v1.3
     with:
-      standard-ref: standard-v1.2
+      standard-ref: standard-v1.3
       # Eigener Runner (x64 oder arm64): {% raw %}runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}{% endraw %}
+      # Der Drift-Hinweis läuft gehostet. Nur wenn gehostete Runner gesperrt sind: {% raw %}drift-runs-on: ${{ vars.CI_RUNS_ON }}{% endraw %}
       # Dateien, die nicht umformatiert werden dürfen (ein Glob je Zeile, nur vom Lint ausgenommen):
       # lint-ignores: |
       #   vendor/*.md
