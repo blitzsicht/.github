@@ -9,7 +9,9 @@
 # - der Standard gleich danach den geprüften Baum verlässt und kein späterer Schritt ihn dort sucht,
 # - jeder Prüfschritt auch nach einem roten Schritt läuft (`!cancelled()`), Lint und Links nur bei
 #   offenem Tor, und die Zusammenfassung immer,
-# - der Drift-Hinweis Fork-PRs auslässt und jede Action auf einen Commit gepinnt ist.
+# - der Drift-Hinweis Fork-PRs auslässt und auf seinem eigenen Runner läuft (`drift-runs-on`,
+#   Default gehostet), nicht auf dem des Prüfjobs,
+# - jede Action auf einen Commit gepinnt ist.
 #
 # Gelesen wird ohne YAML-Bibliothek (nicht auf jedem Runner da), nach Einrückung. Findet der
 # Extraktor einen erwarteten Schritt nicht, wird das als FEHLT gezählt, nicht übergangen.
@@ -18,7 +20,7 @@ set -uo pipefail
 
 HIER="$(cd "$(dirname "$0")" && pwd)"
 WORKFLOW="${WORKFLOW:-$HIER/../.github/workflows/doc-standard.yml}"
-MIN_PROBEN=39
+MIN_PROBEN=42
 [ -f "$WORKFLOW" ] || { echo "NICHT GEPRÜFT: Workflow fehlt ($WORKFLOW)."; exit 2; }
 
 PASS=0
@@ -33,7 +35,7 @@ trap 'rm -rf "$WEG"' EXIT
 
 # feld <job> <schritt> <feld>: Wert eines Felds (if, run, uses, id, name, env.NAME) eines Schritts.
 # <schritt> ist die id, der name oder `#N` (N-ter Schritt, ab 0). `#anzahl` gibt die Zahl der
-# Schritte aus, `job-if` das if des Jobs.
+# Schritte aus, `job-if` das if des Jobs, `job-runs-on` seinen Runner.
 feld() {
   python3 - "$WORKFLOW" "$@" <<'PY'
 import sys, re
@@ -46,8 +48,9 @@ except ValueError:
     sys.exit(3)
 e = next((i for i in range(a + 1, len(zeilen)) if re.match(r'^ {0,2}\S', zeilen[i])), len(zeilen))
 block = zeilen[a + 1:e]
-if schritt == 'job-if':
-    m = next((re.match(r'^    if: (.*)$', z) for z in block if re.match(r'^    if: ', z)), None)
+if schritt in ('job-if', 'job-runs-on'):
+    k = schritt[4:]
+    m = next((re.match(r'^    ' + k + r': (.*)$', z) for z in block if re.match(r'^    ' + k + ': ', z)), None)
     print(m.group(1) if m else ''); sys.exit(0)
 # Schritte: "      - " auf Einrückung 6.
 starts = [i for i, z in enumerate(block) if z.startswith('      - ')]
@@ -83,6 +86,23 @@ else:
 if len(treffer) != 1:
     sys.exit(3)
 print(treffer[0].get(feld, ''))
+PY
+}
+# vorgabe <input>: default eines Inputs von workflow_call, leer wenn es den Input nicht gibt.
+vorgabe() {
+  python3 - "$WORKFLOW" "$1" <<'PY'
+import sys, re
+zeilen = open(sys.argv[1], encoding='utf-8').read().split('\n')
+try:
+    a = zeilen.index('      ' + sys.argv[2] + ':')
+except ValueError:
+    sys.exit(0)
+for z in zeilen[a + 1:]:
+    if not z.startswith('        '):
+        break
+    m = re.match(r'^        default: (.*)$', z)
+    if m:
+        print(m.group(1)); break
 PY
 }
 # index <job> <schritt>: Position des Schritts (id oder name), -1 wenn nicht eindeutig.
@@ -189,7 +209,12 @@ pruefe "Zusammenfassung: danach nicht gelaufen statt grün" 3 "$(grep -c '| nich
 zusammenfassung skipped skipped '' skipped skipped skipped skipped
 pruefe "Zusammenfassung: Vorbereitung gescheitert sichtbar" 1 "$(zeile 'Vorbereitung (Wächter, Standard)' 'nicht gelaufen')"
 
-# 7) Drift nur für PRs aus demselben Repo; alle Actions auf einen Commit gepinnt.
+# 7) Drift auf eigenem Runner und nur für PRs aus demselben Repo; alle Actions auf einen Commit gepinnt.
+# shellcheck disable=SC2016  # Ausdrücke von GitHub, nicht von der Shell
+pruefe "Drift läuft auf drift-runs-on" '${{ inputs.drift-runs-on }}' "$(feld drift-hinweis job-runs-on x)"
+# shellcheck disable=SC2016
+pruefe "Prüfjob läuft weiter auf runs-on" '${{ inputs.runs-on }}' "$(feld pruefen job-runs-on x)"
+pruefe "drift-runs-on ist ohne Angabe gehostet" "'ubuntu-latest'" "$(vorgabe drift-runs-on)"
 pruefe "Drift lässt Fork-PRs aus" 1 "$(feld drift-hinweis job-if x | grep -c 'github.event.pull_request.head.repo.full_name == github.repository')"
 pruefe "jede Action auf einen Commit gepinnt" 0 "$(grep -E '^\s*-? *uses: ' "$WORKFLOW" | grep -cvE '@[0-9a-f]{40}( |$)')"
 
